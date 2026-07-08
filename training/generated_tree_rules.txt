@@ -1,0 +1,17 @@
+if (x[2] < 0.0457) { // std_speed
+  if (x[4] < 1.1950) { // mean_direction_change
+    return [0.9765, 0.0227, 0.0008];
+  } else {
+    return [0.1704, 0.7785, 0.0511];
+  }
+} else {
+  if (x[2] < 1.6244) { // std_speed
+    if (x[2] < 1.1977) { // std_speed
+      return [0.0702, 0.8497, 0.0801];
+    } else {
+      return [0.0000, 0.6090, 0.3910];
+    }
+  } else {
+    return [0.0000, 0.0946, 0.9054];
+  }
+}

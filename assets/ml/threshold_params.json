@@ -1,0 +1,7 @@
+{
+  "threshold_anomalous": 0.25,
+  "threshold_critical": 0.4000000000000001,
+  "search_method": "grid_search_on_validation",
+  "precision_critical_constraint": 0.75,
+  "best_score": 0.8869843527534498
+}

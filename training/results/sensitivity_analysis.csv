@@ -1,0 +1,4 @@
+Ruido GNSS,FPR_Estatico,FPR_Adaptativo,F1_Estatico,F1_Adaptativo,Mejora_FPR (%)
+1.0x,43.7%,6.3%,95.5%,98.8%,85.5%
+2.0x,49.7%,12.8%,94.6%,97.7%,74.3%
+3.0x,54.2%,20.4%,94.1%,96.6%,62.4%

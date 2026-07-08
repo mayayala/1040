@@ -1,0 +1,296 @@
+[33mcommit a116a0b487537a68ac049cc9b3ac2ce95648c7e7[m[33m ([m[1;31morigin/main[m[33m)[m
+Author: Mayerly Jazmin Ayala Chipana <mayjazayala@gmail.com>
+Date:   Mon Jun 15 00:49:52 2026 -0400
+
+    Initial Bound project
+
+[1mdiff --git a/lib/core/services/notification_service.dart b/lib/core/services/notification_service.dart[m
+[1mnew file mode 100644[m
+[1mindex 0000000..fb59e43[m
+[1m--- /dev/null[m
+[1m+++ b/lib/core/services/notification_service.dart[m
+[36m@@ -0,0 +1,283 @@[m
+[32m+[m[32mimport 'package:firebase_messaging/firebase_messaging.dart';[m
+[32m+[m[32mimport 'package:flutter_local_notifications/flutter_local_notifications.dart';[m
+[32m+[m[32mimport 'package:cloud_firestore/cloud_firestore.dart';[m
+[32m+[m[32mimport 'package:firebase_auth/firebase_auth.dart';[m
+[32m+[m[32mimport 'package:flutter/foundation.dart';[m
+[32m+[m[32mimport 'package:http/http.dart' as http;[m
+[32m+[m[32mimport 'dart:convert';[m
+[32m+[m[32mimport 'package:googleapis_auth/auth_io.dart' as auth;[m
+[32m+[m[32mimport 'package:geocercas_app/core/services/notification_navigation.dart';[m
+[32m+[m
+[32m+[m[32mclass NotificationService {[m
+[32m+[m[32m  final FirebaseMessaging _messaging = FirebaseMessaging.instance;[m
+[32m+[m[32m  String? _currentToken;[m[41m [m
+[32m+[m[32m  final FirebaseFirestore _firestore = FirebaseFirestore.instance;[m
+[32m+[m[32m  final FirebaseAuth _auth = FirebaseAuth.instance;[m
+[32m+[m[32m  final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();[m
+[32m+[m
+[32m+[m[32m  Future<String?> getCurrentToken() async {[m
+[32m+[m[32m    // Si ya tenemos el token en cache, retornarlo[m
+[32m+[m[32m    if (_currentToken != null) {[m
+[32m+[m[32m      return _currentToken;[m
+[32m+[m[32m    }[m
+[32m+[m[41m    [m
+[32m+[m[32m    // Si no, obtenerlo de Firebase[m
+[32m+[m[32m    try {[m
+[32m+[m[32m      _currentToken = await _messaging.getToken();[m
+[32m+[m[32m      debugPrint(' Token FCM obtenido: ${_currentToken?.substring(0, 20)}...');[m
+[32m+[m[32m      return _currentToken;[m
+[32m+[m[32m    } catch (e) {[m
+[32m+[m[32m      debugPrint(' Error al obtener token FCM: $e');[m
+[32m+[m[32m      return null;[m
+[32m+[m[32m    }[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  Future<void> refreshAndSaveToken() async {[m
+[32m+[m[32m    try {[m
+[32m+[m[32m      // Forzar refresh del token[m
+[32m+[m[32m      _currentToken = await _messaging.getToken();[m
+[32m+[m[41m      [m
+[32m+[m[32m      if (_currentToken != null) {[m
+[32m+[m[32m        await _saveFcmToken(_currentToken!);[m
+[32m+[m[32m        debugPrint(' Token FCM refrescado y guardado');[m
+[32m+[m[32m      }[m
+[32m+[m[32m    } catch (e) {[m
+[32m+[m[32m      debugPrint(' Error al refrescar token: $e');[m
+[32m+[m[32m    }[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m
+[32m+[m[32m  Future<void> init() async {[m
+[32m+[m[32m    debugPrint(' Inicializando NotificationService...');[m
+[32m+[m[41m    [m
+[32m+[m[32m    // 1. Solicitar permisos[m
+[32m+[m[32m    NotificationSettings settings = await _messaging.requestPermission([m
+[32m+[m[32m      alert: true,[m
+[32m+[m[32m      badge: true,[m
+[32m+[m[32m      sound: true,[m
+[32m+[m[32m    );[m
+[32m+[m[32m    debugPrint(' Permisos de notificación: ${settings.authorizationStatus}');[m
+[32m+[m
+[32m+[m[32m    // 2. Inicializar notificaciones locales con canal para Android 8+[m
+[32m+[m[32m    await _setupLocalNotifications();[m
+[32m+[m
+[32m+[m[32m    // 3. Obtener y guardar token[m
+[32m+[m[32m    String? token = await _messaging.getToken();[m
+[32m+[m[32m    debugPrint(' FCM Token obtenido: ${token?.substring(0, 20)}...');[m
+[32m+[m[41m    [m
+[32m+[m[32m    if (token != null) {[m
+[32m+[m[32m      await _saveFcmToken(token);[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    // 4. Escuchar cambios de token[m
+[32m+[m[32m    _messaging.onTokenRefresh.listen(_saveFcmToken);[m
+[32m+[m
+[32m+[m[32m    // 5. Manejar mensajes en foreground[m
+[32m+[m[32m    FirebaseMessaging.onMessage.listen((RemoteMessage message) {[m
+[32m+[m[32m      debugPrint(' [FOREGROUND] Mensaje recibido: ${message.notification?.title}');[m
+[32m+[m[32m      debugPrint('   Título: ${message.notification?.title}');[m
+[32m+[m[32m      debugPrint('   Cuerpo: ${message.notification?.body}');[m
+[32m+[m[32m      debugPrint('   Data: ${message.data}');[m
+[32m+[m[32m      debugPrint('   Channel ID: ${message.notification?.android?.channelId}');[m
+[32m+[m[41m      [m
+[32m+[m[32m      _showLocalNotification(message);[m
+[32m+[m[32m    });[m
+[32m+[m[41m    [m
+[32m+[m[32m    // 6.  Manejar cuando se toca una notificación (background/killed)[m
+[32m+[m[32m    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {[m
+[32m+[m[32m      debugPrint('️ Notificación tocada: type=${message.data['type']}');[m
+[32m+[m[32m      NotificationNavigation().handleNotificationTap(message.data);[m
+[32m+[m[32m    });[m
+[32m+[m
+[32m+[m[32m    // 7. Manejar notificación al iniciar la app desde killed state[m
+[32m+[m[32m    final initialMessage = await FirebaseMessaging.instance.getInitialMessage();[m
+[32m+[m[32m    if (initialMessage != null) {[m
+[32m+[m[32m      debugPrint(' App iniciada desde notificación: type=${initialMessage.data['type']}');[m
+[32m+[m[32m      // Pequeño delay para asegurar que el router está listo[m
+[32m+[m[32m      Future.delayed(const Duration(milliseconds: 500), () {[m
+[32m+[m[32m        NotificationNavigation().handleNotificationTap(initialMessage.data);[m
+[32m+[m[32m      });[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m  // Escuchar cambios de token (cuando Firebase lo refresca automáticamente)[m
+[32m+[m[32m  _messaging.onTokenRefresh.listen((newToken) async {[m
+[32m+[m[32m    debugPrint(' Token FCM refrescado por Firebase: ${newToken.substring(0, 20)}...');[m
+[32m+[m[32m    _currentToken = newToken;[m
+[32m+[m[41m    [m
+[32m+[m[32m    // Si hay usuario autenticado, actualizar en Firestore[m
+[32m+[m[32m    final user = FirebaseAuth.instance.currentUser;[m
+[32m+[m[32m    if (user != null) {[m
+[32m+[m[32m      await _firestore.collection('users').doc(user.uid).update({[m
+[32m+[m[32m        'fcm_token': newToken,[m
+[32m+[m[32m        'updated_at': FieldValue.serverTimestamp(),[m
+[32m+[m[32m      });[m
+[32m+[m[32m      debugPrint(' Token actualizado en Firestore para ${user.uid}');[m
+[32m+[m[32m    }[m
+[32m+[m[32m  });[m
+[32m+[m[32m    debugPrint(' NotificationService inicializado');[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  /// Configura notificaciones locales con canal para Android 8+[m
+[32m+[m[32m  Future<void> _setupLocalNotifications() async {[m
+[32m+[m[32m    const AndroidInitializationSettings initializationSettingsAndroid =[m
+[32m+[m[32m        AndroidInitializationSettings('@mipmap/ic_launcher');[m
+[32m+[m[41m    [m
+[32m+[m[32m    const InitializationSettings initializationSettings = InitializationSettings([m
+[32m+[m[32m      android: initializationSettingsAndroid,[m
+[32m+[m[32m    );[m
+[32m+[m[41m    [m
+[32m+[m[32m    await _localNotifications.initialize(initializationSettings);[m
+[32m+[m
+[32m+[m[32m    // Crear canal de notificación para Android 8+[m
+[32m+[m[32m    const AndroidNotificationChannel channel = AndroidNotificationChannel([m
+[32m+[m[32m      'high_importance_channel',[m
+[32m+[m[32m      'High Importance Notifications',[m
+[32m+[m[32m      description: 'Notificaciones importantes de geocercas',[m
+[32m+[m[32m      importance: Importance.high,[m
+[32m+[m[32m      playSound: true,[m
+[32m+[m[32m    );[m
+[32m+[m
+[32m+[m[32m    await _localNotifications[m
+[32m+[m[32m        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()[m
+[32m+[m[32m        ?.createNotificationChannel(channel);[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  /// Guarda el token FCM en Firestore[m
+[32m+[m[32m  Future<void> _saveFcmToken(String token) async {[m
+[32m+[m[32m    final user = _auth.currentUser;[m
+[32m+[m[32m    if (user != null) {[m
+[32m+[m[32m      try {[m
+[32m+[m[32m        await _firestore.collection('users').doc(user.uid).set({[m
+[32m+[m[32m          'fcm_token': token,[m
+[32m+[m[32m          'updated_at': FieldValue.serverTimestamp(),[m
+[32m+[m[32m        }, SetOptions(merge: true));[m
+[32m+[m[32m        debugPrint(' FCM Token guardado para ${user.uid}');[m
+[32m+[m[32m      } catch (e) {[m
+[32m+[m[32m        debugPrint(' Error al guardar token: $e');[m
+[32m+[m[32m      }[m
+[32m+[m[32m    }[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  /// Muestra notificación local cuando la app está en foreground[m
+[32m+[m[32m  Future<void> _showLocalNotification(RemoteMessage message) async {[m
+[32m+[m[32m    const AndroidNotificationDetails androidPlatformChannelSpecifics =[m
+[32m+[m[32m        AndroidNotificationDetails([m
+[32m+[m[32m      'high_importance_channel',[m
+[32m+[m[32m      'High Importance Notifications',[m
+[32m+[m[32m      channelDescription: 'Notificaciones importantes de geocercas',[m
+[32m+[m[32m      importance: Importance.high,[m
+[32m+[m[32m      priority: Priority.high,[m
+[32m+[m[32m      playSound: true,[m
+[32m+[m[32m    );[m
+[32m+[m[41m    [m
+[32m+[m[32m    const NotificationDetails platformChannelSpecifics =[m
+[32m+[m[32m        NotificationDetails(android: androidPlatformChannelSpecifics);[m
+[32m+[m
+[32m+[m[32m    // Crear payload para deep linking[m
+[32m+[m[32m    final payload = jsonEncode({[m
+[32m+[m[32m      'type': message.data['type'],[m
+[32m+[m[32m      'data': message.data,[m
+[32m+[m[32m    });[m
+[32m+[m
+[32m+[m[32m    await _localNotifications.show([m
+[32m+[m[32m      message.hashCode,[m
+[32m+[m[32m      message.notification?.title ?? 'Geocercas',[m
+[32m+[m[32m      message.notification?.body ?? 'Nueva notificación',[m
+[32m+[m[32m      platformChannelSpecifics,[m
+[32m+[m[32m      payload: payload, // ← Esto permite capturar el toque[m
+[32m+[m[32m    );[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  ///  ENVÍA NOTIFICACIÓN PUSH VÍA HTTP API v1 (ESTRUCTURA CORREGIDA)[m
+[32m+[m[32m  static Future<void> sendPushNotification({[m
+[32m+[m[32m    required String targetToken,[m
+[32m+[m[32m    required String title,[m
+[32m+[m[32m    required String body,[m
+[32m+[m[32m    Map<String, String>? data,[m
+[32m+[m[32m  }) async {[m
+[32m+[m[32m    const String projectId = 'geocercasmvp'; // ← Tu project_id[m
+[32m+[m[32m    const String serviceAccountJson = r'''{[m
+[32m+[m[32m      "type": "service_account",[m
+[32m+[m[32m      "project_id": "geocercasmvp",[m
+[32m+[m[32m      "private_key_id": "1f51027ae8265fa3eb47053b384b41311fd25876",[m
+[32m+[m[32m      "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCs4vUpEs39Bjwq\ntESKkeigZ3JAPsAIG+GCzhEHCMd1fKmpwQil1nCMpVh7q9bhPWf0na1TEKGIfpgx\nAqZG5ThdlrbrI0os9lbwrcyVz9TjCxH2jQ+wilroQE91Bee4Se9tyCk1lR6QlmPE\nIOzTfmGYC53oFxxbYu2M5BQ6trYk4b5WUY8LVG/6ETpbZlC6VxB6tyDxQ3Ev1UIc\nOFTXtkR9V9NFHlJf0RcmBR0EEy7JJ2x40Pt2VYTpLDyh9ptYTRq1Yd39Wcc/2jje\n1RtnBewjnOFk3Zf+vLQl6luGdzzfuSLFZ2JzcXFLyeoL/tp0dTZ2eAi4Al41Fjw7\nOGE1b6IxAgMBAAECggEAAnR6F/5X/bnxEIetCf0yrRVu+EXT1wGjWQbJU9zebTcL\nFzmiIG28PSkLab0p0Nq8/0qeZ5Wuv4gRq+9+UjcmzuBpIktm3h7U4vfK1g1EmAFE\nHOjJol+ClTX1kuM1tEabf2b2W9gNXi7+hW5UwpeStfSjRkSOvub3mdayyVcnHLyw\na/McmzzZEzYSP40srvnxQacRtTxYPGG35GCjy+WK55nUIrv8v/DkQqI1p1iCliVb\nmPJ8HHSWcm/oplyGPJwFMjdZ5GyTDYXMOF6xemR0wXs3oPKuagklF6IowjUE21jy\nJ6XulBAmzuH97RQ0tg20nwn30MVYLC6H4JXR03tkCQKBgQDW9J2PNyozy6vKpJ7x\niIxlafZbkHgotkMTy5x5TJ+Kg8UPSCHVMMuaRIU28+7vWcBNjsaHSJ4rtYtRbXf3\n1XJosw2oMF2c3eF1jQ6teRzEI7o1xZ3dwFyZ0fgvayqkAQe5t72b3y+5n83zOGnS\nkjYua7AuXigPrv1KUyoDB7KyKQKBgQDN5fDHB+1+ODCzP2nhv8TlbQXa/dFyKBcK\nN9esxN3FHFd0TLoPg4CIUwOwIaIVPFJAJl1gJfWLVDJqDC5su43UFr2szU27+oMz\ncFVO/kMRZCBlf7w9rJCNGVF787+QjQweYGe6RT6OFx2cgr1sN9H7N8RIUaABJjWJ\nlVbXrsvAyQKBgQCcC4g1534ji79ypH8eKFqDZKELZ51TML0RKca16AIJtA7iQSMO\neRXVL9jlQ8A40Zbgtr04iGcKpAg3XJiyuakMiK9pYXMT5Z8+juAQ3tMbMDSFxKgN\nyw9uOxdIlSunU3ggQlrLRQKIZpJD9rgbvTjICjUj9AZxHD+ULTtaZ8Q5wQKBgAC0\nKH6FqGomBwSV0ubSoPmnxb1Z4L1jJbEDP9l3Usq5rhLXsEsdR/MvVXPkqYkpC57s\ngqUxfAVd5E44fHAis/llmoBcs0dRM+GZILGEbPZCQVoXda1ASb4xt/WUf7MeyEvS\nSIh6dBxIN/GxALS9/Bm/twwIO2PFnak6uXFDR68BAoGADQHsZ4AQA6WfqPm/8CYK\neh3r7p5cLNHE5wurhtRwVSeOenqDN0rrGBvUT23MMstdIAJDdIFwCglMHUYKPLx/\nyGjDA6H/ewnqfU8sjpLV3xt3OyQPJjbevgwr3u6dreUxc/VpLI99SW8Ybu+JT1fq\n5rLrrVpIBOw86vRnxCe1hjE=\n-----END PRIVATE KEY-----\n",[m
+[32m+[m[32m      "client_email": "firebase-adminsdk-fbsvc@geocercasmvp.iam.gserviceaccount.com",[m
+[32m+[m[32m      "client_id": "115725253411608292758",[m
+[32m+[m[32m      "auth_uri": "https://accounts.google.com/o/oauth2/auth",[m
+[32m+[m[32m      "token_uri": "https://oauth2.googleapis.com/token",[m
+[32m+[m[32m      "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",[m
+[32m+[m[32m      "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40geocercasmvp.iam.gserviceaccount.com",[m
+[32m+[m[32m      "universe_domain": "googleapis.com"}'''; // ← Tu JSON aquí[m
+[32m+[m
+[32m+[m[32m    try {[m
+[32m+[m[32m      debugPrint(' [API v1] Enviando a: ${targetToken.substring(0, 20)}...');[m
+[32m+[m
+[32m+[m[32m      // 1. Obtener token OAuth2[m
+[32m+[m[32m      final credentials = auth.ServiceAccountCredentials.fromJson([m
+[32m+[m[32m        jsonDecode(serviceAccountJson),[m
+[32m+[m[32m      );[m
+[32m+[m[32m      final scopes = ['https://www.googleapis.com/auth/firebase.messaging'];[m
+[32m+[m[32m      final client = await auth.clientViaServiceAccount(credentials, scopes);[m
+[32m+[m[32m      final accessToken = await client.credentials.accessToken;[m
+[32m+[m[32m      client.close();[m
+[32m+[m
+[32m+[m[32m      // 2. Payload CORREGIDO para API v1[m[41m [m
+[32m+[m[32m      final message = {[m
+[32m+[m[32m        'message': {[m
+[32m+[m[32m          'token': targetToken,[m
+[32m+[m[41m          [m
+[32m+[m[32m          // NOTIFICACIÓN VISUAL (simple, sin anidar android aquí)[m
+[32m+[m[32m          'notification': {[m
+[32m+[m[32m            'title': title,[m
+[32m+[m[32m            'body': body,[m
+[32m+[m[32m          },[m
+[32m+[m[41m          [m
+[32m+[m[32m          // CONFIGURACIÓN ANDROID (al mismo nivel que notification)[m
+[32m+[m[32m          'android': {[m
+[32m+[m[32m            'priority': 'high',[m
+[32m+[m[32m            'ttl': '3600s', // ← String con sufijo 's', no número[m
+[32m+[m[32m            'notification': {[m
+[32m+[m[32m              'channel_id': 'high_importance_channel',[m
+[32m+[m[32m              'sound': 'default',[m
+[32m+[m[32m              'visibility': 'PUBLIC', // ← Mayúsculas: PUBLIC, PRIVATE, SECRET[m
+[32m+[m[32m            },[m
+[32m+[m[32m          },[m
+[32m+[m[41m          [m
+[32m+[m[32m          // DATOS ADICIONALES (para foreground y deep linking)[m
+[32m+[m[32m          'data': {[m
+[32m+[m[32m            ...(data ?? {}),[m
+[32m+[m[32m            'type': data?['type'] ?? 'generic', // Ej: 'link_request', 'link_accepted'[m
+[32m+[m[32m            'click_action': 'FLUTTER_NOTIFICATION_CLICK',[m
+[32m+[m[32m          },[m
+[32m+[m[32m        },[m
+[32m+[m[32m      };[m
+[32m+[m
+[32m+[m[32m      // 3. Enviar petición[m
+[32m+[m[32m      final response = await http.post([m
+[32m+[m[32m        Uri.parse('https://fcm.googleapis.com/v1/projects/$projectId/messages:send'),[m
+[32m+[m[32m        headers: {[m
+[32m+[m[32m          'Content-Type': 'application/json',[m
+[32m+[m[32m          'Authorization': 'Bearer ${accessToken.data}',[m
+[32m+[m[32m        },[m
+[32m+[m[32m        body: jsonEncode(message),[m
+[32m+[m[32m      );[m
+[32m+[m
+[32m+[m[32m      debugPrint(' Respuesta API v1: ${response.statusCode}');[m
+[32m+[m[32m      debugPrint(' Body: ${response.body}');[m
+[32m+[m
+[32m+[m[32m      if (response.statusCode == 200) {[m
+[32m+[m[32m        debugPrint(' Notificación enviada exitosamente (API v1)');[m
+[32m+[m[32m      } else {[m
+[32m+[m[32m        debugPrint(' Error API v1 ${response.statusCode}: ${response.body}');[m
+[32m+[m[32m      }[m
+[32m+[m[32m    } catch (e, stack) {[m
+[32m+[m[32m      debugPrint(' Excepción en API v1: $e');[m
+[32m+[m[32m      debugPrint(' Stack: $stack');[m
+[32m+[m[32m    }[m
+[32m+[m[32m  }[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32m@pragma('vm:entry-point')[m
+[32m+[m[32mFuture<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {[m
+[32m+[m[32m  debugPrint(' [BACKGROUND] Mensaje recibido: ${message.notification?.title}');[m
+[32m+[m[32m}[m
+\ No newline at end of file[m
