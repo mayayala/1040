@@ -45,8 +45,15 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install -r training/requirements-evaluation.txt
       - run: |
-          python training/evaluate_shipped_tree.py --output "$RUNNER_TEMP/android_tree_evaluation.json"
+          python training/evaluate_shipped_tree.py --assets training/baseline_android_tree --output "$RUNNER_TEMP/android_tree_evaluation.json"
           diff -u training/results/android_tree_evaluation.json "$RUNNER_TEMP/android_tree_evaluation.json"
+      - run: |
+          python training/recalibrate_critical_tree.py --asset-output "$RUNNER_TEMP/critical-assets" --output "$RUNNER_TEMP/critical-tree.json"
+          diff -u training/results/critical_tree_evaluation.json "$RUNNER_TEMP/critical-tree.json"
+          for asset in decision_tree.json tree_scaler_params.json threshold_params.json; do
+            diff -u "assets/ml/$asset" "$RUNNER_TEMP/critical-assets/$asset"
+          done
+          python -c 'import json, os; p=json.load(open(os.environ["RUNNER_TEMP"]+"/critical-tree.json"))["partitions"]; assert all(p[k]["meets_minimum"] for k in ("historical_test_comparison", "new_synthetic_test"))'
       - run: |
           python training/evaluate_geofences.py --output "$RUNNER_TEMP/geofences.json"
           python -c 'import json, os; a=json.load(open("training/results/independent_geofence_evaluation.json")); b=json.load(open(os.environ["RUNNER_TEMP"]+"/geofences.json")); assert all(a[k]["matrix"] == b[k]["matrix"] for k in ("static","adaptive")); assert a["observations"] == b["observations"]'

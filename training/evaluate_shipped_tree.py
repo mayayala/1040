@@ -24,8 +24,8 @@ def scores_at_leaf(node, row):
     return node["scores"]
 
 
-def evaluate(dataset):
-    tree, scaler, thresholds = [json.loads((ASSETS / p).read_text()) for p in ASSET_NAMES]
+def evaluate(dataset, assets=ASSETS):
+    tree, scaler, thresholds = [json.loads((assets / p).read_text()) for p in ASSET_NAMES]
     df = pd.read_csv(dataset)
     features = df[scaler["feature_names"]].to_numpy(dtype=float)
     labels = df["label"].to_numpy()
@@ -48,7 +48,7 @@ def evaluate(dataset):
     return {
         "protocol": "frozen_android_tree_group_test_v1",
         "dataset_sha256": hashlib.sha256(dataset.read_bytes()).hexdigest(),
-        "assets_sha256": {p: hashlib.sha256((ASSETS / p).read_bytes()).hexdigest() for p in ASSET_NAMES},
+        "assets_sha256": {p: hashlib.sha256((assets / p).read_bytes()).hexdigest() for p in ASSET_NAMES},
         "versions": {"numpy": np.__version__, "pandas": pd.__version__, "sklearn": sklearn.__version__},
         "split_seed": 42,
         "splits": {name: {"samples": len(idx), "users": len(group)}
@@ -64,9 +64,10 @@ def evaluate(dataset):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", type=Path, default=ROOT / "training/mobility_dataset.csv")
+    parser.add_argument("--assets", type=Path, default=ASSETS)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    result = json.dumps(evaluate(args.dataset), ensure_ascii=False, indent=2) + "\n"
+    result = json.dumps(evaluate(args.dataset, args.assets), ensure_ascii=False, indent=2) + "\n"
     if args.output:
         args.output.write_text(result, encoding="utf-8")
     else:

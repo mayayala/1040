@@ -6,13 +6,13 @@ Versión de origen: [a10b35f4](https://github.com/mayayala/1040/commit/a10b35f44
 | --- | --- | --- |
 | Arquitectura Android y comunicación entre roles | Flujo de vínculo con aceptación del objetivo; cola cifrada local, escritura idempotente por ID, reintentos y envío FCM desde Functions. El SOS se muestra como guardado hasta que se sincronice. | Ejecutar registro, vínculo, revocación, mapa, SOS y reconexión en dos Android con un Firebase de prueba. Medir latencia desde la acción hasta la recepción. |
 | Geocercas adaptativas comparadas con estáticas | El radio depende de precisión GNSS, velocidad, horario y riesgo; el estado previo determina los umbrales de entrada y salida. Los polígonos se evalúan por su contorno. Comparación nueva de 6.000 trayectorias circulares simuladas. | Comprobar cruces en teléfonos, perfiles de ruido de campo y polígonos. Las cifras de simulación sólo corresponden a círculos y al protocolo reproducible. |
-| Árbol de decisión local y rendimiento | Artefacto común a Dart y Python; árbol de profundidad máxima 3, 18 características, reglas de prioridad y ruta de inferencia. Evaluación nueva del árbol congelado sobre 1.800 ventanas sintéticas. | Medir tiempos de inferencia en Android, validar los tres niveles de alerta y explicar la sensibilidad crítica inferior al criterio del 80 %. |
+| Árbol de decisión local y rendimiento | Artefacto común a Dart y Python; árbol de profundidad máxima 3, interfaz de 18 características, reglas de prioridad y ruta de inferencia. La versión posterior alcanza el criterio de sensibilidad en dos pruebas sintéticas. | Medir tiempos de inferencia y confirmar la sensibilidad y los falsos avisos con casos etiquetados en campo. |
 
 ## Resultados ejecutados
 
 La [figura archivada en el repositorio original](https://github.com/mayayala/1040/blob/a10b35f44b5269b473116ecd72752d5e3862cc61/training/plots/02_confusion_matrix_test.png) contiene 1.800 muestras, incluidas 204 críticas. No coincide con las matrices históricas del documento, de 1.213 y 1.208 muestras, ni con la nueva evaluación del árbol congelado, que también tiene 1.800 muestras pero sólo 156 críticas. No se establece equivalencia entre esas matrices.
 
-### Clasificador incorporado en la app
+### Clasificador de referencia de la revisión anterior
 
 El CSV del repositorio tiene 12.000 ventanas de 200 usuarios sintéticos. Se reprodujo la división por usuario con semilla 42: 140 usuarios para entrenamiento, 30 para validación y 30 para prueba. Esta ejecución **no reentrena** ni ajusta el umbral mirando la prueba. Evalúa el árbol y el preprocesamiento que se distribuyen con Android; no certifica el origen de las matrices de la defensa ni mide la latencia en Android.
 
@@ -26,7 +26,20 @@ Exactitud: 89,67 %. Sensibilidad crítica: 76,28 % (119/156). Precisión crític
 
 Las mismas características, normalización y umbrales recorren las mismas ramas. Las estimaciones de clase de la hoja son salidas del árbol, no un paso aleatorio ni una red neuronal. Las reglas del motor pueden alterar la severidad final de la alerta; la matriz anterior sólo evalúa la clasificación del árbol con sus umbrales.
 
-El [análisis de umbrales](../training/results/critical_threshold_validation.json) usa sólo las 1.800 ventanas de validación, con 126 casos críticos. Mantener el umbral 0,40 dio 92 aciertos críticos y 38 falsos positivos críticos (sensibilidad 73,02 %; precisión 70,77 %). Reducirlo a 0,391 dio 102 aciertos y 98 falsos positivos (sensibilidad 80,95 %; precisión 51,00 %; F1 crítico 62,58 % frente a 71,88 %). Se mantuvo el umbral original: superar el criterio de sensibilidad de esta forma produciría 60 falsas alertas críticas adicionales para recuperar 10 casos en validación. Estas cifras no reemplazan las de prueba.
+El [análisis de umbrales](../training/results/critical_threshold_validation.json) usa sólo las 1.800 ventanas de validación, con 126 casos críticos. Mantener el umbral 0,40 dio 92 aciertos críticos y 38 falsos positivos críticos (sensibilidad 73,02 %; precisión 70,77 %). Reducirlo a 0,391 dio 102 aciertos y 98 falsos positivos (sensibilidad 80,95 %; precisión 51,00 %; F1 crítico 62,58 % frente a 71,88 %). Ese ajuste aislado no se adoptó. Estas cifras no reemplazan las de prueba.
+
+### Árbol revisado para el criterio de sensibilidad crítica
+
+El árbol se ajustó con la partición de entrenamiento. Se compararon configuraciones de profundidad máxima tres y se seleccionaron el árbol y los umbrales con usuarios de validación, exigiendo al menos 82 % de sensibilidad en esa partición y priorizando F1 crítico. La configuración seleccionada ajusta las ramas para separar casos críticos del resto y conserva las frecuencias de las tres clases en cada hoja. El conjunto sintético nuevo se generó después de fijar la configuración, con 200 usuarios nuevos y semilla 104081. Ambas versiones se comparan en las mismas muestras de cada prueba.
+
+| Conjunto | Sensibilidad crítica anterior → revisada | Precisión crítica anterior → revisada | Falsos positivos críticos anterior → revisada |
+| --- | --- | --- | --- |
+| 1.800 ventanas, comparación con la prueba de referencia | 76,28 % (119/156) → 91,03 % (142/156) | 73,01 % → 60,43 % | 44 → 93 |
+| 12.000 ventanas, prueba sintética nueva | 78,32 % (860/1.098) → 89,44 % (982/1.098) | 76,72 % → 61,49 % | 261 → 615 |
+
+El mínimo de 80 % se cumple en ambas pruebas sintéticas. El F1 crítico baja de 74,61 % a 72,63 % en la comparación de referencia y de 77,51 % a 72,88 % en la prueba nueva. Los resultados corresponden al clasificador, no a la severidad final después de las reglas ni a notificaciones recibidas en campo. Las matrices completas, la configuración y los resultados de validación están en [critical_tree_evaluation.json](../training/results/critical_tree_evaluation.json).
+
+Para reproducir la selección y las dos pruebas: `python training/recalibrate_critical_tree.py --asset-output /tmp/critical-assets --output /tmp/critical-tree.json`. Las dependencias están fijadas en `training/requirements-evaluation.txt`.
 
 ### Geocercas circulares
 

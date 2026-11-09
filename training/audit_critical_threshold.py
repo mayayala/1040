@@ -7,11 +7,13 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import GroupShuffleSplit
 
-from evaluate_shipped_tree import ASSETS, ASSET_NAMES, ROOT, scores_at_leaf
+from evaluate_shipped_tree import ASSET_NAMES, ROOT, scores_at_leaf
+
+BASELINE = ROOT / "training" / "baseline_android_tree"
 
 
-def audit(dataset):
-    tree, scaler, thresholds = [json.loads((ASSETS / path).read_text()) for path in ASSET_NAMES]
+def audit(dataset, assets=BASELINE):
+    tree, scaler, thresholds = [json.loads((assets / path).read_text()) for path in ASSET_NAMES]
     table = pd.read_csv(dataset)
     features = table[scaler["feature_names"]].to_numpy(dtype=float)
     labels = table["label"].to_numpy()
@@ -46,9 +48,10 @@ def audit(dataset):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", type=Path, default=ROOT / "training/mobility_dataset.csv")
+    parser.add_argument("--assets", type=Path, default=BASELINE)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    report = json.dumps(audit(args.dataset), indent=2) + "\n"
+    report = json.dumps(audit(args.dataset, args.assets), indent=2) + "\n"
     if args.output:
         args.output.write_text(report, encoding="utf-8")
     else:

@@ -1,0 +1,21 @@
+{
+  "feature": 2,
+  "threshold": 0.0457,
+  "left": {
+    "feature": 4,
+    "threshold": 1.195,
+    "left": {"scores": [0.9765, 0.0227, 0.0008]},
+    "right": {"scores": [0.1704, 0.7785, 0.0511]}
+  },
+  "right": {
+    "feature": 2,
+    "threshold": 1.6244,
+    "left": {
+      "feature": 2,
+      "threshold": 1.1977,
+      "left": {"scores": [0.0702, 0.8497, 0.0801]},
+      "right": {"scores": [0.0, 0.609, 0.391]}
+    },
+    "right": {"scores": [0.0, 0.0946, 0.9054]}
+  }
+}
