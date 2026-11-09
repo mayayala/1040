@@ -26,11 +26,13 @@ class LocationService {
 
   LatLng? _lastKnownPosition;
   DateTime? _lastLocationUpdate;
-  bool _isSOSActive = false;
 
   StreamSubscription? _geofencesSubscription;
   List<Map<String, dynamic>> _activeGeofences = [];
-  bool _hasSavedInitialLocation = false; 
+  DateTime? _lastCloudWrite;
+  bool _publishing = false;
+  int _publishInterval = 300;
+  bool _forcingLocation = false;
 
   Future<LocationPermission> requestPermission() async {
     LocationPermission permission = await Geolocator.checkPermission();
@@ -65,7 +67,6 @@ class LocationService {
         distanceFilter: 10, // Requiere moverse 10m para emitir
       ),
     ).listen((Position position) {
-      debugPrint('Geolocator stream emitió: ${position.latitude}, ${position.longitude}');
       _handleLocationUpdate(position);
     }, onError: (error) {
       debugPrint('Error en Geolocator stream: $error');
@@ -82,7 +83,15 @@ class LocationService {
   void _startPeriodicUpdateTimer() {
     _periodicUpdateTimer?.cancel();
     _periodicUpdateTimer = Timer.periodic(const Duration(minutes: 1), (timer) async {
-      await _checkAndForceUpdate();
+      if (_forcingLocation) return;
+      _forcingLocation = true;
+      try {
+        await _checkAndForceUpdate();
+      } catch (_) {
+        debugPrint('No se pudo actualizar la configuración de seguimiento');
+      } finally {
+        _forcingLocation = false;
+      }
     });
   }
 
@@ -127,6 +136,8 @@ class LocationService {
       }
     }
 
+    _publishInterval = requiredIntervalSeconds;
+    if (_auth.currentUser?.uid != user.uid || !_isTracking) return;
     final now = DateTime.now();
     if (_lastLocationUpdate == null || 
         now.difference(_lastLocationUpdate!).inSeconds >= requiredIntervalSeconds) {
@@ -136,10 +147,11 @@ class LocationService {
         final position = await Geolocator.getCurrentPosition(
           locationSettings: const LocationSettings(accuracy: LocationAccuracy.best),
         );
-        debugPrint('Ubicación forzada obtenida: ${position.latitude}, ${position.longitude}');
+
         
-        await _saveEncryptedLocationNow(position);
+
         
+        if (_auth.currentUser?.uid != user.uid || !_isTracking) return;
         _lastLocationUpdate = now;
         _lastKnownPosition = LatLng(position.latitude, position.longitude);
         
@@ -164,13 +176,13 @@ class LocationService {
 
     _lastLocationUpdate = DateTime.now();
 
-    if (!_hasSavedInitialLocation && position.accuracy < 50.0) {
-      _hasSavedInitialLocation = true;
-      debugPrint('Primera ubicación válida guardada en Firestore');
-      _saveEncryptedLocationNow(position);
+    if (position.accuracy > 0 && position.accuracy < 50.0) {
+      unawaited(_saveEncryptedLocationNow(position));
     }
 
-    _runDecisionEngine(position);
+    unawaited(_runDecisionEngine(position).catchError((Object _) {
+      debugPrint('No se pudo registrar un evento de ubicación');
+    }));
   }
 
   void _startGeofenceListener() {
@@ -184,12 +196,12 @@ class LocationService {
     });
   }
 
-  void _runDecisionEngine(Position position) {
+  Future<void> _runDecisionEngine(Position position) async {
     final objectiveId = _auth.currentUser?.uid;
     if (objectiveId == null) return;
 
     final currentPos = LatLng(position.latitude, position.longitude);
-    final now = DateTime.now();
+    final now = position.timestamp.toLocal();
 
     // 1. PREPARAR CONTEXTO PARA EL MODELO ML
     
@@ -244,20 +256,14 @@ class LocationService {
       objectiveId: objectiveId,
       position: position,
       activeGeofences: _activeGeofences,
-      isSOSActive: _isSOSActive,
+      isSOSActive: false,
     );
 
     for (final event in events) {
-      debugPrint('EVENTO: ${event.severity.name.toUpperCase()} | ${event.geofenceName}');
-      debugPrint('XAI: ${event.explanation}');
-      _eventQueue.enqueueEvent(event);
-      _trySyncEvents();
+      await _eventQueue.enqueueEvent(event);
     }
   }
   
-  void _trySyncEvents() {
-    _eventQueue.syncPendingEvents();
-  }
 
   bool _isInsideGeofence(LatLng? position, Map<String, dynamic> geofence) {
     if (position == null) return false;
@@ -291,14 +297,26 @@ class LocationService {
     _periodicUpdateTimer = null;
     _geofencesSubscription = null;
     _isTracking = false;
+    _lastCloudWrite = null;
+    _lastLocationUpdate = null;
+    _activeGeofences = [];
+    _lastKnownPosition = null;
+    _publishInterval = 300;
+    DecisionEngine.reset();
     debugPrint('Rastreo de ubicación detenido');
   }
   Future<void> _saveEncryptedLocationNow(Position position) async {
     final user = _auth.currentUser;
-    if (user == null) return;
+    if (user == null || _publishing) return;
+    final now = DateTime.now();
+    if (_lastCloudWrite != null &&
+        now.difference(_lastCloudWrite!).inSeconds < _publishInterval) return;
+    _publishing = true;
 
     try {
-      final encryptedLocation = E2EEncryptionService().encryptLocation(
+      final recordId = _firestore.collection('events').doc().id;
+      final encryptedLocation = await E2EEncryptionService().encryptLocation(
+        recordId: recordId,
         objectiveId: user.uid,
         latitude: position.latitude,
         longitude: position.longitude,
@@ -306,13 +324,16 @@ class LocationService {
 
       await _firestore.collection('users').doc(user.uid).update({
         'encrypted_last_location': encryptedLocation,
-        'last_location_timestamp': FieldValue.serverTimestamp(),
+        'last_location_record_id': recordId,
+        'last_location_timestamp': Timestamp.fromDate(position.timestamp),
         'last_accuracy': position.accuracy,
         'updated_at': FieldValue.serverTimestamp(),
       });
-      debugPrint('Ubicación inicial cifrada guardada en Firestore');
+      _lastCloudWrite = now;
     } catch (e) {
-      debugPrint('Error al guardar ubicación inicial: $e');
+      debugPrint('La ubicación no se pudo publicar');
+    } finally {
+      _publishing = false;
     }
   }
   bool get isTracking => _isTracking;

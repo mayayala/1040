@@ -1,0 +1,220 @@
+{
+  "protocol": "group_validation_then_new_synthetic_users_v1",
+  "dataset_sha256": "c8ea9cb35dacc128419d8eadb5209a41de566887cc385d33e202a4475be105d1",
+  "baseline_assets_sha256": {
+    "decision_tree.json": "9a1c58b3a7442e51e278311e5b1c0ef6075b181f8dabdb01a01c4e628a1fc2b4",
+    "tree_scaler_params.json": "31c0f5248299bd09061b87f59abf9c2ad7e6497a55f37cbab25cfa6412d89b39",
+    "threshold_params.json": "cc498d0d5a156dec881bc47df0dcf383d51474a992bfa0cd516f753ccc9cf8e8"
+  },
+  "validation_target": 0.82,
+  "minimum_sensitivity": 0.8,
+  "candidate": {
+    "family": "critical_split_decision_tree",
+    "eligible_features": [
+      "mean_speed",
+      "max_speed",
+      "std_speed",
+      "stationary_ratio"
+    ],
+    "max_depth": 3,
+    "min_samples_leaf": 80,
+    "criterion": "gini",
+    "class_weight": {
+      "0": 1.0,
+      "1": 12.0
+    },
+    "random_state": 42
+  },
+  "thresholds": {
+    "threshold_anomalous": 0.1076158940397351,
+    "threshold_critical": 0.24550898203592814
+  },
+  "partitions": {
+    "validation": {
+      "users": 30,
+      "baseline": {
+        "matrix": [
+          [
+            1299,
+            105,
+            0
+          ],
+          [
+            8,
+            224,
+            38
+          ],
+          [
+            0,
+            34,
+            92
+          ]
+        ],
+        "samples": 1800,
+        "true_critical": 92,
+        "false_critical": 38,
+        "missed_critical": 34,
+        "sensitivity_critical": 0.7301587301587301,
+        "precision_critical": 0.7076923076923077,
+        "f1_critical": 0.71875,
+        "f1_macro": 0.7949362933742332,
+        "fpr_critical": 0.022700119474313024,
+        "accuracy": 0.8972222222222223
+      },
+      "candidate": {
+        "matrix": [
+          [
+            1383,
+            21,
+            0
+          ],
+          [
+            48,
+            128,
+            94
+          ],
+          [
+            0,
+            17,
+            109
+          ]
+        ],
+        "samples": 1800,
+        "true_critical": 109,
+        "false_critical": 94,
+        "missed_critical": 17,
+        "sensitivity_critical": 0.8650793650793651,
+        "precision_critical": 0.5369458128078818,
+        "f1_critical": 0.662613981762918,
+        "f1_macro": 0.7418104402423488,
+        "fpr_critical": 0.056152927120669056,
+        "accuracy": 0.9
+      }
+    },
+    "historical_test_comparison": {
+      "users": 30,
+      "baseline": {
+        "matrix": [
+          [
+            1301,
+            97,
+            0
+          ],
+          [
+            8,
+            194,
+            44
+          ],
+          [
+            0,
+            37,
+            119
+          ]
+        ],
+        "samples": 1800,
+        "true_critical": 119,
+        "false_critical": 44,
+        "missed_critical": 37,
+        "sensitivity_critical": 0.7628205128205128,
+        "precision_critical": 0.7300613496932515,
+        "f1_critical": 0.7460815047021944,
+        "f1_macro": 0.7944171220982454,
+        "fpr_critical": 0.0267639902676399,
+        "accuracy": 0.8966666666666666
+      },
+      "candidate": {
+        "matrix": [
+          [
+            1372,
+            26,
+            0
+          ],
+          [
+            26,
+            127,
+            93
+          ],
+          [
+            0,
+            14,
+            142
+          ]
+        ],
+        "samples": 1800,
+        "true_critical": 142,
+        "false_critical": 93,
+        "missed_critical": 14,
+        "sensitivity_critical": 0.9102564102564102,
+        "precision_critical": 0.6042553191489362,
+        "f1_critical": 0.7263427109974424,
+        "f1_macro": 0.774252273465401,
+        "fpr_critical": 0.05656934306569343,
+        "accuracy": 0.9116666666666666
+      },
+      "meets_minimum": true
+    },
+    "new_synthetic_test": {
+      "users": 200,
+      "seed": 104081,
+      "baseline": {
+        "matrix": [
+          [
+            8300,
+            670,
+            0
+          ],
+          [
+            59,
+            1612,
+            261
+          ],
+          [
+            0,
+            238,
+            860
+          ]
+        ],
+        "samples": 12000,
+        "true_critical": 860,
+        "false_critical": 261,
+        "missed_critical": 238,
+        "sensitivity_critical": 0.7832422586520947,
+        "precision_critical": 0.7671721677074042,
+        "f1_critical": 0.7751239296980622,
+        "f1_macro": 0.8190748777287293,
+        "fpr_critical": 0.023940561364887175,
+        "accuracy": 0.8976666666666666
+      },
+      "candidate": {
+        "matrix": [
+          [
+            8845,
+            125,
+            0
+          ],
+          [
+            324,
+            993,
+            615
+          ],
+          [
+            5,
+            111,
+            982
+          ]
+        ],
+        "samples": 12000,
+        "true_critical": 982,
+        "false_critical": 615,
+        "missed_critical": 116,
+        "sensitivity_critical": 0.8943533697632058,
+        "precision_critical": 0.6149029430181591,
+        "f1_critical": 0.7287569573283859,
+        "f1_macro": 0.7773390335512153,
+        "fpr_critical": 0.056411667583929556,
+        "accuracy": 0.9016666666666666
+      },
+      "meets_minimum": true
+    }
+  }
+}

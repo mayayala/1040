@@ -1,0 +1,91 @@
+name: Integración Android con Firebase local
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'android/**'
+      - 'assets/ml/**'
+      - 'lib/**'
+      - 'functions/**'
+      - 'integration_test/**'
+      - 'scripts/**'
+      - 'firestore.*'
+      - 'firebase.json'
+      - 'pubspec.*'
+      - '.github/workflows/android-integration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 27
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Preparar Flutter y Firebase local
+        run: |
+          git clone --depth 1 --branch 3.38.3 https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+          npm --prefix functions install
+          python3 scripts/create_emulator_android_config.py
+      - name: Preparar Android SDK y Gradle
+        run: |
+          flutter pub get
+          if [ ! -f android/gradle/wrapper/gradle-wrapper.jar ]; then
+            flutter create --no-pub --platforms=android --project-name wrapper_seed "$RUNNER_TEMP/wrapper_seed"
+            cp "$RUNNER_TEMP/wrapper_seed/android/gradlew" android/
+            cp "$RUNNER_TEMP/wrapper_seed/android/gradle/wrapper/gradle-wrapper.jar" android/gradle/wrapper/
+            chmod +x android/gradlew
+          fi
+          sdk_bin="$ANDROID_HOME/cmdline-tools/latest/bin"
+          if [ ! -x "$sdk_bin/sdkmanager" ]; then
+            sdk_bin="$(dirname "$(find "$ANDROID_HOME/cmdline-tools" -path '*/bin/sdkmanager' -print | sort -V | tail -1)")"
+          fi
+          test -x "$sdk_bin/sdkmanager"
+          "$sdk_bin/sdkmanager" "platforms;android-36" "ndk;28.2.13676358" "system-images;android-35;google_apis;x86_64"
+          echo "$ANDROID_HOME/emulator" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-geocercas-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          export ANDROID_AVD_HOME="$RUNNER_TEMP/geocercas-avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo "ANDROID_AVD_HOME=$ANDROID_AVD_HOME" >> "$GITHUB_ENV"
+          printf 'no\n' | "$sdk_bin/avdmanager" create avd -n geocercas-ci -k "system-images;android-35;google_apis;x86_64" -p "$ANDROID_AVD_HOME/geocercas-ci.avd" --force
+          "$ANDROID_HOME/emulator/emulator" -list-avds | tee "$RUNNER_TEMP/geocercas-avds.log"
+          grep -Fx geocercas-ci "$RUNNER_TEMP/geocercas-avds.log"
+      - name: Ejecutar dos roles en Android y Firebase de prueba
+        run: |
+          emulator -avd geocercas-ci -port 5554 -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect > "$RUNNER_TEMP/emulator-android.log" 2>&1 &
+          emulator_pid=$!
+          trap 'kill "$emulator_pid" 2>/dev/null || true' EXIT
+          deadline=$((SECONDS + 240))
+          until [ "$(adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; do
+            if ! kill -0 "$emulator_pid" 2>/dev/null || [ "$SECONDS" -ge "$deadline" ]; then
+              cat "$RUNNER_TEMP/emulator-android.log"
+              exit 1
+            fi
+            sleep 2
+          done
+          adb shell input keyevent 82
+          npx --yes firebase-tools@14 emulators:exec --only auth,firestore,functions --project demo-geocercas "bash scripts/run_android_integration.sh"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: evidencia-integracion-android
+          path: |
+            ${{ runner.temp }}/geocercas-android-integration.json
+            ${{ runner.temp }}/geocercas-integration.log
+            ${{ runner.temp }}/emulator-android.log
+            ${{ runner.temp }}/geocercas-avds.log
+            firestore-debug.log
+          if-no-files-found: ignore

@@ -102,7 +102,7 @@ class _HomeObjectiveScreenState extends State<HomeObjectiveScreen> {
     _loadInitialPosition();
     _locationSubscription = _locationService.locationStream.listen(
       (position) {
-        debugPrint('HomeObjectiveScreen: Ubicación recibida: ${position.latitude}, ${position.longitude}');
+
         if (mounted) {
           setState(() => _lastPosition = position);
         }
@@ -121,7 +121,7 @@ class _HomeObjectiveScreenState extends State<HomeObjectiveScreen> {
           timeLimit: Duration(seconds: 5),
         ),
       );
-      debugPrint('Posición inicial obtenida: ${position.latitude}, ${position.longitude}');
+
       if (mounted) {
         setState(() => _lastPosition = position);
       }
@@ -130,7 +130,7 @@ class _HomeObjectiveScreenState extends State<HomeObjectiveScreen> {
       try {
         final lastKnown = await Geolocator.getLastKnownPosition();
         if (lastKnown != null && mounted) {
-          debugPrint('Usando última posición conocida: ${lastKnown.latitude}, ${lastKnown.longitude}');
+
           setState(() => _lastPosition = lastKnown);
         }
       } catch (e2) {
@@ -1401,6 +1401,7 @@ class _HomeObjectiveScreenState extends State<HomeObjectiveScreen> {
         message: 'Solicitud de auxilio inmediato.',
       );
 
+      if (!mounted) return;
       setState(() {
         _lastSOSTimestamp = DateTime.now();
         _isSendingSOS = false;
@@ -1417,7 +1418,7 @@ class _HomeObjectiveScreenState extends State<HomeObjectiveScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    ' SOS enviado (±${position.accuracy.toStringAsFixed(1)}m)',
+                    'SOS guardado. Se enviará al sincronizar.',
                   ),
                 ),
               ],

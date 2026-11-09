@@ -5,7 +5,6 @@ import 'package:geocercas_app/core/models/risk_prediction.dart';
 import 'package:geocercas_app/core/services/decision_tree_model.dart';
 import 'package:geocercas_app/core/services/geofence_adaptive.dart';
 import 'package:geocercas_app/core/services/position_history.dart';
-import 'package:geocercas_app/core/services/event_queue_service.dart';
 import 'package:geocercas_app/core/services/friendly_messages.dart';
 
 class DecisionEngine {
@@ -18,6 +17,13 @@ class DecisionEngine {
 
   static Future<void> initialize() async {
     await _treeModel.loadModel();
+  }
+
+  static void reset() {
+    _positionHistory.clear();
+    _lastGeofenceStates.clear();
+    _lastHeartbeats.clear();
+    _lastMlStates.clear();
   }
 
   static void updatePositionHistory(
@@ -50,7 +56,7 @@ class DecisionEngine {
   }) {
     final events = <GeofenceEvent>[];
     final currentPos = LatLng(position.latitude, position.longitude);
-    final now = DateTime.now();
+    final now = position.timestamp.toLocal();
 
     if (isSOSActive) {
       final event = _createEvent(
@@ -64,15 +70,6 @@ class DecisionEngine {
       );
       events.add(event);
 
-      EventQueueService().notifyObserversOfAlert(
-        objectiveId: objectiveId,
-        severity: 'critical',
-        geofenceName: 'SOS Manual',
-        explanation: event.explanation,
-        latitude: position.latitude,
-        longitude: position.longitude,
-        eventType: 'sos', 
-      );
 
       return events;
     }
@@ -89,15 +86,6 @@ class DecisionEngine {
       );
       events.add(event);
 
-      EventQueueService().notifyObserversOfAlert(
-        objectiveId: objectiveId,
-        severity: 'critical',
-        geofenceName: 'Pérdida de Señal',
-        explanation: event.explanation,
-        latitude: position.latitude,
-        longitude: position.longitude,
-        eventType: 'signal_loss', 
-      );
 
       return events;
     }
@@ -133,15 +121,6 @@ class DecisionEngine {
         );
         events.add(event);
 
-        EventQueueService().notifyObserversOfAlert(
-          objectiveId: objectiveId,
-          severity: event.severity == EventSeverity.critical ? 'critical' : 'preventive',
-          geofenceName: geofence.name,
-          explanation: event.explanation,
-          latitude: position.latitude,
-          longitude: position.longitude,
-          eventType: 'entry_${geofence.riskLevel}_risk',
-        );
       } else if (evaluation.justExited) {
         events.add(_createEvent(
           objectiveId: objectiveId,
@@ -163,30 +142,19 @@ class DecisionEngine {
         );
         if (insideEvent != null) {
           events.add(insideEvent);
-
-          if (insideEvent.severity == EventSeverity.critical || insideEvent.severity == EventSeverity.preventive) {
-            EventQueueService().notifyObserversOfAlert(
-              objectiveId: objectiveId,
-              severity: insideEvent.severity == EventSeverity.critical ? 'critical' : 'preventive',
-              geofenceName: geofence.name,
-              explanation: insideEvent.explanation,
-              latitude: position.latitude,
-              longitude: position.longitude,
-              eventType: 'ml_anomaly_no_geofence',
-            );
-          }
         }
       }
     }
 
-    if (mlPrediction != null && (mlPrediction.isAnomalous || mlPrediction.isCritical)) {
-      const globalKey = 'global_ml_state';
+    final globalKey = 'global_ml_state:$objectiveId';
+    if (mlPrediction != null && mlPrediction.isNormal) _lastMlStates.remove(globalKey);
+    if (events.isEmpty && mlPrediction != null && (mlPrediction.isAnomalous || mlPrediction.isCritical)) {
       final lastClass = _lastMlStates[globalKey] ?? 0;
       final currentClass = mlPrediction.predictedClass;
       final classChanged = lastClass != currentClass;
       _lastMlStates[globalKey] = currentClass;
 
-      if (classChanged || mlPrediction.isCritical) {
+      if (classChanged) {
         final event = _createEvent(
           objectiveId: objectiveId,
           geofenceId: 'ml_anomaly_no_geofence',
@@ -198,15 +166,6 @@ class DecisionEngine {
         );
         events.add(event);
 
-        EventQueueService().notifyObserversOfAlert(
-          objectiveId: objectiveId,
-          severity: mlPrediction.isCritical ? 'critical' : 'preventive',
-          geofenceName: 'Alerta ML',
-          explanation: event.explanation,
-          latitude: position.latitude,
-          longitude: position.longitude,
-          eventType: 'ml_anomaly_no_geofence',
-        );
       }
     }
 
@@ -239,7 +198,7 @@ class DecisionEngine {
     }
 
     final lastHeartbeat = _lastHeartbeats[geofenceId];
-    final now = DateTime.now();
+    final now = position.timestamp.toLocal();
     final intervalMinutes = geofence.riskLevel == 'high' ? 2 :
                             geofence.riskLevel == 'medium' ? 5 : 10;
 
@@ -333,7 +292,7 @@ class DecisionEngine {
           )}'
         : '';
 
-    return '$friendlyMsg$technicalDetails';
+    return '$friendlyMsg$technicalDetails | Ruta: $decisionPath';
   }
 
   static String _buildExitExplanation(
@@ -359,7 +318,7 @@ class DecisionEngine {
           )}'
         : '';
 
-    return '$friendlyMsg$technicalDetails';
+    return '$friendlyMsg$technicalDetails | Ruta: $decisionPath';
   }
 
   static String _buildMlAlertExplanation(
@@ -373,7 +332,7 @@ class DecisionEngine {
 
     final technicalDetails = '\n\n Análisis técnico: Confianza del modelo ${(ml.confidence * 100).toStringAsFixed(1)}% | Velocidad: ${position.speed.toStringAsFixed(1)} m/s';
 
-    return '$friendlyMsg$technicalDetails';
+    return '$friendlyMsg$technicalDetails | Ruta: $decisionPath';
   }
 
   static GeofenceEvent _createEvent({
@@ -386,7 +345,7 @@ class DecisionEngine {
     required Position position,
   }) {
     return GeofenceEvent(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: '',
       objectiveId: objectiveId,
       geofenceId: geofenceId,
       geofenceName: geofenceName,
@@ -397,7 +356,7 @@ class DecisionEngine {
       longitude: position.longitude,
       hdop: position.accuracy,
       velocity: position.speed,
-      timestamp: DateTime.now(),
+      timestamp: position.timestamp,
     );
   }
 }

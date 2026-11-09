@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:latlong2/latlong.dart';
 import 'package:geocercas_app/data/services/geofence_service.dart';
 
@@ -53,34 +54,36 @@ class AdaptiveGeofence {
     required double speed,
     required DateTime timestamp,
   }) {
+    if (!baseRadius.isFinite || baseRadius <= 0) return 0.0;
     final fAccuracy = _accuracyFactor(accuracy);
     final fSpeed = _speedFactor(speed);
     final fHour = _hourFactor(timestamp);
     final fRisk = _riskFactor();
 
-    return baseRadius * fAccuracy * fSpeed * fHour * fRisk;
+    return (baseRadius * fAccuracy * fSpeed * fHour * fRisk)
+        .clamp(baseRadius * 0.75, baseRadius * 1.5).toDouble();
   }
 
   /// Factor por calidad de señal
   /// Mala señal → expande radio para reducir falsos positivos
   double _accuracyFactor(double accuracy) {
     // accuracy en metros; 10m es ideal
-    return 1.0 + 0.15 * (accuracy / 10.0);
+    return 1.0 + 0.15 * (accuracy.isFinite ? math.max(0.0, accuracy) : 0.0) / 10.0;
   }
 
   /// Factor por velocidad
   /// Alta velocidad → expande radio para evitar activaciones por cruce breve
   double _speedFactor(double speed) {
     // speed en m/s; 2m/s es caminar,
-    return 1.0 + 0.05 * speed;
+    return 1.0 + 0.05 * (speed.isFinite ? math.max(0.0, speed) : 0.0);
   }
 
   /// Factor por horario
-  /// Noche → reduce radio porque hay más riesgo
+  /// Factor nocturno de la política adaptativa
   double _hourFactor(DateTime timestamp) {
     final hour = timestamp.hour;
     final isNight = hour >= 22 || hour <= 5;
-    return isNight ? 0.85 : 1.0;
+    return isNight ? 1.2 : 1.0;
   }
 
   /// Factor por nivel de riesgo
@@ -95,7 +98,7 @@ class AdaptiveGeofence {
   }
 
   ///  Evalúa pertenencia con HISTÉRESIS
-  /// Umbral de entrada: 0.95 × r(t) (más fácil entrar)
+  /// Umbral de entrada: 0.95 × r(t) (exige cruzar hacia el interior)
   /// Umbral de salida: 1.05 × r(t) (más difícil salir)
   GeofenceEvaluation evaluate({
     required LatLng position,
@@ -114,12 +117,18 @@ class AdaptiveGeofence {
     final exitThreshold = adaptiveRadius * 1.05;
 
     double distance;
+    bool isInside;
+    final threshold = wasInside ? exitThreshold : entryThreshold;
 
-    if (type == 'circle' && center != null) {
+    if (adaptiveRadius > 0 && type == 'circle' && center != null) {
       distance = GeofenceService.calculateDistance(position, center!);
-    } else if (type == 'polygon' && vertices.length >= 3 && center != null) {
-      // Para polígonos, usamos distancia al centroide como aproximación
-      distance = GeofenceService.calculateDistance(position, center!);
+      isInside = distance <= threshold;
+    } else if (adaptiveRadius > 0 && type == 'polygon' && vertices.length >= 3) {
+      final signedDistance = _signedDistanceToBoundary(position);
+      distance = signedDistance.abs();
+      // El radio equivalente determina el margen; el límite sigue siendo
+      // el contorno del polígono, incluso cuando no es convexo.
+      isInside = signedDistance <= threshold - baseRadius;
     } else {
       return GeofenceEvaluation(
         isInside: false,
@@ -128,14 +137,6 @@ class AdaptiveGeofence {
         justEntered: false,
         justExited: false,
       );
-    }
-
-    // Aplicar histéresis
-    bool isInside;
-    if (wasInside) {
-      isInside = distance <= exitThreshold;
-    } else {
-      isInside = distance <= entryThreshold;
     }
 
     final justEntered = isInside && !wasInside;
@@ -149,6 +150,28 @@ class AdaptiveGeofence {
       justExited: justExited,
     );
   }
+  // Proyección local en metros para perímetros urbanos.
+  double _signedDistanceToBoundary(LatLng point) {
+    const metresPerDegree = 6371000 * math.pi / 180;
+    final lonScale = metresPerDegree * math.cos(point.latitude * math.pi / 180);
+    var nearest = double.infinity;
+    for (var i = 0; i < vertices.length; i++) {
+      final a = vertices[i];
+      final b = vertices[(i + 1) % vertices.length];
+      final ax = (a.longitude - point.longitude) * lonScale;
+      final ay = (a.latitude - point.latitude) * metresPerDegree;
+      final dx = (b.longitude - a.longitude) * lonScale;
+      final dy = (b.latitude - a.latitude) * metresPerDegree;
+      final length2 = dx * dx + dy * dy;
+      final t = length2 == 0 ? 0.0 :
+          (-(ax * dx + ay * dy) / length2).clamp(0.0, 1.0).toDouble();
+      final x = ax + t * dx;
+      final y = ay + t * dy;
+      nearest = math.min(nearest, math.sqrt(x * x + y * y));
+    }
+    return GeofenceService.isPointInPolygon(point, vertices) ? -nearest : nearest;
+  }
+
 }
 
 /// Resultado de evaluación de geocerca adaptativa

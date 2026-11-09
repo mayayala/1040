@@ -1,0 +1,117 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isUser(uid) { return signedIn() && request.auth.uid == uid; }
+    function linkPath(objective, observer) {
+      return /databases/$(database)/documents/monitoring_links/$(objective + ':' + observer);
+    }
+    function relation(objective, observer, statuses) {
+      return exists(linkPath(objective, observer)) &&
+        get(linkPath(objective, observer)).data.status in statuses;
+    }
+    function isObserver(uid) {
+      return signedIn() && relation(uid, request.auth.uid, ['active']) &&
+        get(/databases/$(database)/documents/users/$(uid)).data.get('is_deleted', false) == false &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('is_deleted', false) == false;
+    }
+    function canView(uid) { return isUser(uid) || isObserver(uid); }
+    function participant(data) {
+      return signedIn() &&
+        (request.auth.uid == data.objective_id || request.auth.uid == data.observer_id);
+    }
+    function nonRawLocation(data) {
+      return !data.keys().hasAny(['latitude', 'longitude', 'location', 'lat', 'lng']);
+    }
+    function validEnvelope(value) {
+      return value is string && value.size() <= 50000 &&
+        value.matches('^\\{"v":2,"boxes":\\{.*\\}\\}$');
+    }
+    match /users/{uid} {
+      // La búsqueda por correo se resuelve por una función autenticada.
+      allow get: if canView(uid) || (signedIn() &&
+        relation(request.auth.uid, uid, ['active']) &&
+        resource.data.get('is_deleted', false) == false);
+      allow create, update: if isUser(uid) && nonRawLocation(request.resource.data)
+        && (!request.resource.data.keys().hasAny(['encrypted_last_location']) ||
+          (resource != null &&
+            request.resource.data.encrypted_last_location == resource.data.get('encrypted_last_location', null)) ||
+          (validEnvelope(request.resource.data.encrypted_last_location) &&
+            request.resource.data.last_location_record_id is string));
+      allow update: if isObserver(uid) &&
+        (request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['live_mode_active','updated_at']) &&
+          request.resource.data.live_mode_active is bool ||
+         request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['sos_active','sos_deactivated_at','sos_deactivated_by','updated_at']) &&
+          resource.data.sos_active == true && request.resource.data.sos_active == false &&
+          request.resource.data.sos_deactivated_by == request.auth.uid);
+    }
+    match /location_public_keys/{uid} {
+      allow get: if signedIn();
+      allow create: if isUser(uid) && request.resource.data.keys().hasOnly(['key']) &&
+        request.resource.data.key is string &&
+        request.resource.data.key.matches('^[A-Za-z0-9+/]{43}=$');
+    }
+    match /monitoring_links/{id} {
+      allow get: if signedIn() &&
+        ((id.split(':').size() == 2 &&
+          (id.split(':')[0] == request.auth.uid || id.split(':')[1] == request.auth.uid)) ||
+         participant(resource.data));
+      allow list: if participant(resource.data);
+      allow create: if isUser(request.resource.data.observer_id) &&
+        request.resource.data.keys().hasOnly(['objective_id','observer_id','status','created_at']) &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.objective_id != request.auth.uid &&
+        id == request.resource.data.objective_id + ':' + request.auth.uid &&
+        request.resource.data.created_at == request.time &&
+        get(/databases/$(database)/documents/users/$(request.resource.data.objective_id))
+          .data.get('is_deleted', false) == false;
+      allow update: if participant(resource.data) &&
+        (isUser(resource.data.objective_id) && resource.data.status == 'pending' &&
+          request.resource.data.status == 'active' &&
+          exists(/databases/$(database)/documents/location_public_keys/$(resource.data.objective_id)) &&
+          exists(/databases/$(database)/documents/location_public_keys/$(resource.data.observer_id)) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','accepted_at']) &&
+          request.resource.data.accepted_at == request.time ||
+         resource.data.status in ['pending','active','revoked'] &&
+          request.resource.data.status == 'revoked' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','revoked_at']) &&
+          request.resource.data.revoked_at == request.time);
+    }
+    match /geofences/{id} {
+      allow read: if canView(resource.data.objective_id);
+      allow create: if canView(request.resource.data.objective_id) &&
+        isUser(request.resource.data.created_by);
+      allow update: if canView(resource.data.objective_id) &&
+        request.resource.data.objective_id == resource.data.objective_id &&
+        request.resource.data.created_by == resource.data.created_by;
+    }
+    match /events/{id} {
+      allow read: if canView(resource.data.objective_id);
+      // Una transacción del propietario puede comprobar que su ID aún no existe.
+      // Para nuevos eventos, la ausencia se comprueba usando el prefijo del autor.
+      allow get: if signedIn() && id.split(':').size() == 2 &&
+        id.split(':')[0] == request.auth.uid &&
+        !exists(/databases/$(database)/documents/events/$(id));
+      allow create: if nonRawLocation(request.resource.data) && (
+        isUser(request.resource.data.objective_id) &&
+          id.split(':').size() == 2 && id.split(':')[0] == request.auth.uid &&
+          request.resource.data.event_type != 'sos_resolved' &&
+          validEnvelope(request.resource.data.encrypted_location) &&
+          request.resource.data.severity in ['critical','preventive','informative'] &&
+          request.resource.data.timestamp is timestamp ||
+        isObserver(request.resource.data.objective_id) &&
+          request.resource.data.observer_id == request.auth.uid &&
+          request.resource.data.event_type == 'sos_resolved' &&
+          request.resource.data.severity == 'informative' &&
+          !request.resource.data.keys().hasAny(['encrypted_location'])
+      );
+    }
+    match /security_notices/{id} {
+      allow create: if isUser(request.resource.data.objective_id) &&
+        request.resource.data.keys().hasOnly(['objective_id','created_at']) &&
+        request.resource.data.created_at == request.time;
+    }
+  }
+}

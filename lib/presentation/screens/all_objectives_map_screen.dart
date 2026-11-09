@@ -80,8 +80,10 @@ class _AllObjectivesMapScreenState extends State<AllObjectivesMapScreen> {
           final userData = userDoc.data();
           final encryptedLocation = userData?['encrypted_last_location'] as String?;
           
-          if (encryptedLocation != null && encryptedLocation.isNotEmpty) {
-            final location = E2EEncryptionService().decryptLocation(
+          final recordId = userData?['last_location_record_id'] as String?;
+          if (recordId != null && encryptedLocation != null && encryptedLocation.isNotEmpty) {
+            final location = await E2EEncryptionService().decryptLocation(
+              recordId: recordId,
               objectiveId: objectiveUid,
               encryptedData: encryptedLocation,
             );

@@ -1,0 +1,85 @@
+{
+  "protocol": "frozen_android_tree_group_test_v1",
+  "dataset_sha256": "c8ea9cb35dacc128419d8eadb5209a41de566887cc385d33e202a4475be105d1",
+  "assets_sha256": {
+    "decision_tree.json": "9a1c58b3a7442e51e278311e5b1c0ef6075b181f8dabdb01a01c4e628a1fc2b4",
+    "tree_scaler_params.json": "31c0f5248299bd09061b87f59abf9c2ad7e6497a55f37cbab25cfa6412d89b39",
+    "threshold_params.json": "cc498d0d5a156dec881bc47df0dcf383d51474a992bfa0cd516f753ccc9cf8e8"
+  },
+  "versions": {
+    "numpy": "2.3.5",
+    "pandas": "2.2.3",
+    "sklearn": "1.8.0"
+  },
+  "split_seed": 42,
+  "splits": {
+    "train": {
+      "samples": 8400,
+      "users": 140
+    },
+    "validation": {
+      "samples": 1800,
+      "users": 30
+    },
+    "test": {
+      "samples": 1800,
+      "users": 30
+    }
+  },
+  "class_order": [
+    "Normal",
+    "Anómalo",
+    "Crítico"
+  ],
+  "confusion_matrix": [
+    [
+      1301,
+      97,
+      0
+    ],
+    [
+      8,
+      194,
+      44
+    ],
+    [
+      0,
+      37,
+      119
+    ]
+  ],
+  "accuracy": 0.8966666666666666,
+  "report": {
+    "Normal": {
+      "precision": 0.9938884644766998,
+      "recall": 0.9306151645207439,
+      "f1-score": 0.9612116734392316,
+      "support": 1398.0
+    },
+    "Anómalo": {
+      "precision": 0.5914634146341463,
+      "recall": 0.7886178861788617,
+      "f1-score": 0.6759581881533101,
+      "support": 246.0
+    },
+    "Crítico": {
+      "precision": 0.7300613496932515,
+      "recall": 0.7628205128205128,
+      "f1-score": 0.7460815047021944,
+      "support": 156.0
+    },
+    "accuracy": 0.8966666666666666,
+    "macro avg": {
+      "precision": 0.771804409601366,
+      "recall": 0.8273511878400394,
+      "f1-score": 0.7944171220982454,
+      "support": 1800.0
+    },
+    "weighted avg": {
+      "precision": 0.9160253577169852,
+      "recall": 0.8966666666666666,
+      "f1-score": 0.903582415826279,
+      "support": 1800.0
+    }
+  }
+}
