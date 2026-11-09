@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -6,9 +8,11 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'dart:convert';
 import 'package:geocercas_app/routes.dart';
+import 'package:geocercas_app/data/services/location_service.dart';
 import 'package:geocercas_app/core/services/notification_service.dart';
 import 'package:geocercas_app/core/services/notification_navigation.dart';
 import 'package:geocercas_app/core/services/event_queue_service.dart';
+import 'package:geocercas_app/core/services/e2e_encryption_service.dart';
 import 'package:geocercas_app/core/services/decision_engine.dart';
 import 'package:geocercas_app/core/widgets/app_lock_wrapper.dart';
 
@@ -36,11 +40,25 @@ void main() async {
   // Inicializar notificaciones locales antges del NotificationService
   await _initLocalNotifications();
   
-  await NotificationService().init();
+  unawaited(NotificationService().init().catchError((Object _) {
+    debugPrint('Servicio de notificaciones no disponible al iniciar');
+  }));
   await Hive.initFlutter();
   await EventQueueService().init();
   await DecisionEngine.initialize();
-  await EventQueueService().cleanInvalidEvents();
+  FirebaseAuth.instance.authStateChanges().listen((user) {
+    if (user == null) {
+      unawaited(LocationService().stopBackgroundTracking());
+    } else {
+      unawaited(_resumeSession());
+    }
+  });
+
+  Connectivity().onConnectivityChanged.listen((result) {
+    if (result != ConnectivityResult.none && FirebaseAuth.instance.currentUser != null) {
+      unawaited(_resumeSession());
+    }
+  });
 
   runApp(const GeocercasApp());
 }
@@ -73,24 +91,17 @@ Future<void> _initLocalNotifications() async {
   debugPrint('Notificaciones locales inicializadas');
 }
 
+// Android obtiene la configuración del google-services.json del entorno.
 Future<void> _initializeFirebase() async {
+  await Firebase.initializeApp();
+}
+
+Future<void> _resumeSession() async {
+  unawaited(EventQueueService().syncPendingEvents());
   try {
-    await Firebase.initializeApp(
-      options: const FirebaseOptions(
-        apiKey: "",  // APP KEY
-        appId: "", // APP ID
-        messagingSenderId: "", // SENDER ID
-        projectId: "", // PROJECT ID
-        storageBucket: "", // PROJECT ID appspot.com
-      ),
-    );
-  } catch (e) {
-    if (e.toString().contains('duplicate-app')) {
-      Firebase.app();
-      debugPrint('Firebase ya inicializado');
-    } else {
-      rethrow;
-    }
+    await E2EEncryptionService().registerDeviceKey();
+  } catch (_) {
+    debugPrint('La clave del dispositivo aún no pudo registrarse');
   }
 }
 

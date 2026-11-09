@@ -17,8 +17,6 @@ dependencies:
   cloud_firestore: ^5.4.0
   firebase_messaging: ^15.1.0
   flutter_local_notifications: ^17.0.0
-  http: ^1.2.0 # Para hacer las peticiones HTTP a FCM
-  googleapis_auth: ^1.4.1  # ← Para obtener tokens OAuth2
   # Geolocalización y background
   geolocator: ^13.0.1
   # Persistencia local
@@ -26,6 +24,8 @@ dependencies:
   hive_flutter: ^1.1.0
   # Criptografía y almacenamiento seguro
   encrypt: ^5.0.3
+  cryptography: ^2.7.0
+  cloud_functions: ^5.1.0
   local_auth: ^2.2.0 
   flutter_secure_storage: ^9.2.2
   # State Management y Navegación
@@ -70,5 +70,6 @@ flutter:
   assets:
     - assets/ml/tree_scaler_params.json
     - assets/ml/threshold_params.json
+    - assets/ml/decision_tree.json
     - assets/icon/
     - assets/images/

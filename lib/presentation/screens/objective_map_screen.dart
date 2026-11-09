@@ -52,19 +52,21 @@ class _ObjectiveMapScreenState extends State<ObjectiveMapScreen> {
         .collection('users')
         .doc(widget.objectiveUid)
         .snapshots()
-        .listen((userDoc) {
+        .listen((userDoc) async {
       if (!userDoc.exists || !mounted) return;
       
       final data = userDoc.data()!;
       final encryptedLocation = data['encrypted_last_location'] as String?;
       
-      if (encryptedLocation == null || encryptedLocation.isEmpty) {
+      final recordId = data['last_location_record_id'] as String?;
+      if (recordId == null || encryptedLocation == null || encryptedLocation.isEmpty) {
         debugPrint('Aún no hay ubicación cifrada disponible');
         return;
       }
       
       // Descifrar la ubicación
-      final location = E2EEncryptionService().decryptLocation(
+      final location = await E2EEncryptionService().decryptLocation(
+        recordId: recordId,
         objectiveId: widget.objectiveUid,
         encryptedData: encryptedLocation,
       );
@@ -87,8 +89,6 @@ class _ObjectiveMapScreenState extends State<ObjectiveMapScreen> {
           _isLiveModeActive = isLive;
         });
         _mapController.move(latLng, _currentZoom);
-        
-        debugPrint('Mapa actualizado en tiempo real: ${latLng.latitude.toStringAsFixed(4)}, ${latLng.longitude.toStringAsFixed(4)}');
       }
     });
   }

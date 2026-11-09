@@ -1,0 +1,8 @@
+{
+  "indexes": [
+    {"collectionGroup":"events","queryScope":"COLLECTION","fields":[
+      {"fieldPath":"objective_id","order":"ASCENDING"},{"fieldPath":"timestamp","order":"DESCENDING"}
+    ]}
+  ],
+  "fieldOverrides": []
+}

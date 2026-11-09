@@ -3,7 +3,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geocercas_app/core/services/app_lock_service.dart';
 import 'package:geocercas_app/core/services/secure_pin_service.dart';
-import 'package:geocercas_app/core/services/notification_service.dart';
 
 class AppLockScreen extends StatefulWidget {
   final VoidCallback onUnlock;
@@ -145,48 +144,15 @@ class _AppLockScreenState extends State<AppLockScreen> {
   }
 
   Future<void> _notifyObserversOfFailedAttempts() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
     try {
-      final user = _auth.currentUser;
-      if (user == null) {
-        debugPrint('No hay usuario autenticado para notificar');
-        return;
-      }
-
-      debugPrint('Notificando a observadores sobre intentos fallidos...');
-
-      final linksSnapshot = await FirebaseFirestore.instance
-          .collection('monitoring_links')
-          .where('objective_id', isEqualTo: user.uid)
-          .where('status', isEqualTo: 'active')
-          .get();
-
-      debugPrint('Encontrados ${linksSnapshot.docs.length} observadores vinculados');
-
-      for (final linkDoc in linksSnapshot.docs) {
-        final observerUid = linkDoc.data()['observer_id'] as String;
-        final observerDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(observerUid)
-            .get();
-
-        final observerToken = observerDoc.data()?['fcm_token'] as String?;
-
-        if (observerToken != null && observerToken.isNotEmpty) {
-          await NotificationService.sendPushNotification(
-            targetToken: observerToken,
-            title: 'Alerta de Seguridad',
-            body: 'Se detectaron 3 intentos fallidos de acceso a la cuenta de ${user.displayName ?? "tu objetivo"}. La cuenta fue bloqueada temporalmente.',
-            data: {
-              'type': 'security_alert',
-              'objective_id': user.uid,
-              'reason': 'failed_pin_attempts',
-            },
-          );
-          debugPrint('Notificación enviada a observador $observerUid');
-        }
-      }
-    } catch (e) {
-      debugPrint('Error al notificar intentos fallidos: $e');
+      await FirebaseFirestore.instance.collection('security_notices').add({
+        'objective_id': user.uid,
+        'created_at': FieldValue.serverTimestamp(),
+      });
+    } catch (_) {
+      debugPrint('La notificación de seguridad no se pudo registrar');
     }
   }
 

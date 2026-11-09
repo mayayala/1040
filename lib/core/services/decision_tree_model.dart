@@ -7,157 +7,112 @@ class DecisionTreeModel {
   factory DecisionTreeModel() => _instance;
   DecisionTreeModel._internal();
 
-  bool _isLoaded = false;
-
-  List<double> _mean = [];
-  List<double> _scale = [];
-
-  double _thresholdAnomalous = 0.5;
-  double _thresholdCritical = 0.5;
-
-  static const List<String> _featureNames = [
-    'mean_speed',              // [0]
-    'max_speed',               // [1]
-    'std_speed',               // [2]
-    'total_distance',          // [3]
-    'mean_direction_change',   // [4]
-    'max_direction_change',    // [5]
-    'stationary_ratio',        // [6]
-    'max_distance_from_home',  // [7]
-    'mean_distance_from_home', // [8]
-    'mean_zone_risk',          // [9]
-    'max_zone_risk',           // [10]
-    'gps_accuracy_mean',       // [11]
-    'gps_accuracy_std',        // [12]
-    'mean_hour_sin',           // [13]
-    'mean_hour_cos',           // [14]
-    'night_ratio',             // [15]
-    'rush_hour_ratio',         // [16]
-    'mean_altitude',           // [17]
-  ];
+  _TreeNode? _root;
+  late List<double> _mean;
+  late List<double> _scale;
+  late List<String> _names;
+  late double _anomalous;
+  late double _critical;
 
   Future<void> loadModel() async {
+    _root = null;
     try {
-      // Cargar parámetros
-      final scalerJson = await rootBundle.loadString('assets/ml/tree_scaler_params.json');
-      final scalerData = jsonDecode(scalerJson);
-      _mean = List<double>.from(scalerData['mean']);
-      _scale = List<double>.from(scalerData['scale']);
-
-      // Cargar umbrales optimizados
-      final thresholdJson = await rootBundle.loadString('assets/ml/threshold_params.json');
-      final thresholdData = jsonDecode(thresholdJson);
-      _thresholdAnomalous = (thresholdData['threshold_anomalous'] as num).toDouble();
-      _thresholdCritical = (thresholdData['threshold_critical'] as num).toDouble();
-
-      _isLoaded = true;
-      print(' Árbol cargado: ${_mean.length} features, umbrales A=$_thresholdAnomalous C=$_thresholdCritical');
-    } catch (e) {
-      print(' Error al cargar árbol: $e');
-      _isLoaded = false;
-    }
-  }
-
-  /// Prediccion usando el árbol entrenado
-  RiskPrediction? predict(List<double> features) {
-    if (!_isLoaded || features.length != 18) {
-      print(' Error: Se esperaban 18 features, se recibieron ${features.length}');
-      return null;
-    }
-
-    final normalized = _normalize(features);
-    final classProbs = _traverseTree(normalized, 0);
-
-    int predictedClass;
-    if (classProbs[2] >= _thresholdCritical) {
-      predictedClass = 2; // Crítico
-    } else if (classProbs[1] >= _thresholdAnomalous) {
-      predictedClass = 1; // Anómalo
-    } else {
-      predictedClass = 0; // Normal
-    }
-
-    final confidence = classProbs[predictedClass];
-
-    return RiskPrediction(
-      probabilities: classProbs,
-      predictedClass: predictedClass,
-      confidence: confidence,
-    );
-  }
-
-  List<double> _normalize(List<double> features) {
-    if (_mean.isEmpty || _scale.isEmpty) return features;
-    return List.generate(features.length, (i) {
-      return (features[i] - _mean[i]) / (_scale[i] + 1e-10);
-    });
-  }
-
-  List<double> _traverseTree(List<double> x, int depth) {
-    if (x[2] < 0.0457) { // std_speed
-      if (x[4] < 1.1950) { // mean_direction_change
-        return [0.9765, 0.0227, 0.0008];
-      } else {
-        return [0.1704, 0.7785, 0.0511];
+      final scaler = jsonDecode(
+        await rootBundle.loadString('assets/ml/tree_scaler_params.json'),
+      ) as Map<String, dynamic>;
+      final thresholds = jsonDecode(
+        await rootBundle.loadString('assets/ml/threshold_params.json'),
+      ) as Map<String, dynamic>;
+      final root = _TreeNode.parse(jsonDecode(
+        await rootBundle.loadString('assets/ml/decision_tree.json'),
+      ) as Map<String, dynamic>, 0);
+      _mean = (scaler['mean'] as List).map((x) => (x as num).toDouble()).toList();
+      _scale = (scaler['scale'] as List).map((x) => (x as num).toDouble()).toList();
+      _names = List<String>.from(scaler['feature_names'] as List);
+      _anomalous = (thresholds['threshold_anomalous'] as num).toDouble();
+      _critical = (thresholds['threshold_critical'] as num).toDouble();
+      if (_mean.length != 18 || _scale.length != 18 || _names.length != 18 ||
+          _mean.any((x) => !x.isFinite) ||
+          _scale.any((x) => !x.isFinite || x <= 0) ||
+          [_anomalous, _critical].any((x) => !x.isFinite || x < 0 || x > 1)) {
+        throw const FormatException('Parámetros del árbol inválidos');
       }
-    } else {
-      if (x[2] < 1.6244) { // std_speed
-        if (x[2] < 1.1977) { // std_speed
-          return [0.0702, 0.8497, 0.0801];
-        } else {
-          return [0.0000, 0.6090, 0.3910];
-        }
-      } else {
-        return [0.0000, 0.0946, 0.9054];
-      }
+      _root = root;
+    } catch (_) {
+      // Las reglas explícitas del motor siguen disponibles.
+      _root = null;
     }
   }
+
+  RiskPrediction? predict(List<double> features) => _evaluate(features);
 
   String getDecisionPath(List<double> features) {
-    if (!_isLoaded) return 'Modelo no cargado';
-
-    final normalized = _normalize(features);
     final path = <String>[];
-    path.add('${_featureNames[2]}=${features[2].toStringAsFixed(3)} m/s');
-
-    if (normalized[2] < 0.0457) {
-      path.add('→ ${_featureNames[2]} ESTABLE (σ < 0.0457)');
-      path.add('${_featureNames[4]}=${features[4].toStringAsFixed(3)}');
-
-      if (normalized[4] < 1.1950) {
-        path.add('→ ${_featureNames[4]} ESTABLE');
-        path.add('→ Clasificación: NORMAL (97.6%)');
-        path.add('Patrón: Movimiento predecible y constante');
-      } else {
-        path.add('→ ${_featureNames[4]} ERRÁTICA');
-        path.add('→ Clasificación: ANÓMALO (77.8%)');
-        path.add('Patrón: Cambios bruscos de dirección sin velocidad');
-      }
-    } else {
-      path.add('→ ${_featureNames[2]} VARIABLE (σ ≥ 0.0457)');
-
-      if (normalized[2] < 1.6244) {
-        path.add('→ Variabilidad MODERADA');
-
-        if (normalized[2] < 1.1977) {
-          path.add('→ Clasificación: ANÓMALO (84.9%)');
-          path.add('Patrón: Velocidad fluctuante moderada');
-        } else {
-          path.add('→ Variabilidad ALTA');
-          path.add('→ Clasificación: ANÓMALO/CRÍTICO (60.9%/39.1%)');
-          path.add('Patrón: Comportamiento errático intenso');
-        }
-      } else {
-        path.add('→ Variabilidad EXTREMA (σ ≥ 1.6244)');
-        path.add('→ Clasificación: CRÍTICO (90.5%)');
-        path.add('Patrón: Movimiento caótico, posible emergencia');
-      }
-    }
-
+    final prediction = _evaluate(features, path: path);
+    if (prediction == null) return 'Modelo o datos no disponibles';
+    path.add('Clase: ${prediction.riskLabel} '
+        '(${(100 * prediction.confidence).toStringAsFixed(1)} %)');
     return path.join(' | ');
   }
 
-  void dispose() {
-    _isLoaded = false;
+  RiskPrediction? _evaluate(List<double> features, {List<String>? path}) {
+    final root = _root;
+    if (root == null || features.length != 18 ||
+        features.any((x) => !x.isFinite)) {
+      return null;
+    }
+    var node = root;
+    while (node.scores == null) {
+      final index = node.feature!;
+      final value = (features[index] - _mean[index]) / (_scale[index] + 1e-10);
+      final threshold = node.threshold!;
+      final left = value < threshold;
+      path?.add('${_names[index]} normalizado: ${value.toStringAsFixed(4)} '
+          '${left ? "<" : "≥"} $threshold');
+      node = left ? node.left! : node.right!;
+    }
+    final scores = node.scores!;
+    final label = scores[2] >= _critical ? 2 : (scores[1] >= _anomalous ? 1 : 0);
+    return RiskPrediction(
+      probabilities: scores,
+      predictedClass: label,
+      confidence: scores[label],
+    );
+  }
+
+  void dispose() => _root = null;
+}
+
+class _TreeNode {
+  final List<double>? scores;
+  final int? feature;
+  final double? threshold;
+  final _TreeNode? left;
+  final _TreeNode? right;
+
+  const _TreeNode({this.scores, this.feature, this.threshold, this.left, this.right});
+
+  factory _TreeNode.parse(Map<String, dynamic> data, int depth) {
+    if (depth > 3) throw const FormatException('Profundidad inválida');
+    if (data.containsKey('scores')) {
+      final scores = (data['scores'] as List).map((x) => (x as num).toDouble());
+      final values = List<double>.unmodifiable(scores);
+      if (values.length != 3 ||
+          values.any((x) => !x.isFinite || x < 0 || x > 1) ||
+          (values.reduce((a, b) => a + b) - 1).abs() > 0.001) {
+        throw const FormatException('Hoja inválida');
+      }
+      return _TreeNode(scores: values);
+    }
+    final feature = data['feature'] as int;
+    final threshold = (data['threshold'] as num).toDouble();
+    if (feature < 0 || feature >= 18 || !threshold.isFinite) {
+      throw const FormatException('Nodo inválido');
+    }
+    return _TreeNode(
+      feature: feature, threshold: threshold,
+      left: _TreeNode.parse(data['left'] as Map<String, dynamic>, depth + 1),
+      right: _TreeNode.parse(data['right'] as Map<String, dynamic>, depth + 1),
+    );
   }
 }

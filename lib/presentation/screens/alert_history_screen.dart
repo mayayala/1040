@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geocercas_app/core/models/geofence_event.dart';
@@ -37,7 +38,7 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
 
     // Eventos locales
     try {
-      final localEvents = eventQueue.getLocalEvents(limit: 200);
+      final localEvents = await eventQueue.getLocalEvents(limit: 200);
       final filteredLocal = widget.objectiveId != null
           ? localEvents.where((e) => e.objectiveId == widget.objectiveId).toList()
           : localEvents;
@@ -47,93 +48,24 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
       debugPrint('Error al cargar eventos locales: $e');
     }
 
-    // Decifra las coordenadas
+    // Firestore autoriza la consulta por objetivo, no un historial global.
     try {
-      Query query = FirebaseFirestore.instance
-          .collection('events')
-          .orderBy('timestamp', descending: true)
-          .limit(100);
-      
-      if (widget.objectiveId != null) {
-        query = FirebaseFirestore.instance
-            .collection('events')
-            .where('objective_id', isEqualTo: widget.objectiveId)
-            .orderBy('timestamp', descending: true)
-            .limit(100);
-      }
-      
-      final snapshot = await query.get();
-      
-      final firestoreEvents = snapshot.docs.map((doc) {
-        final rawData = doc.data();
-        if (rawData == null) return null;
-        
-        final data = rawData as Map<String, dynamic>;
-        final objectiveId = data['objective_id'] as String? ?? '';
-        
-        final encryptedLocation = data['encrypted_location'] as String?;
-        Map<String, double>? location;
-        
-        if (encryptedLocation != null && encryptedLocation.isNotEmpty) {
-          location = E2EEncryptionService().decryptLocation(
-            objectiveId: objectiveId,
-            encryptedData: encryptedLocation,
-          );
-        }
-        
-        return GeofenceEvent(
-          id: doc.id,
-          objectiveId: objectiveId,
-          geofenceId: data['geofence_id'] as String? ?? '',
-          geofenceName: data['geofence_name'] as String? ?? 'Sin nombre',
-          severity: EventSeverity.values.firstWhere(
-            (e) => e.name == data['severity'],
-            orElse: () => EventSeverity.informative,
-          ),
-          eventType: data['event_type'] as String? ?? 'unknown',
-          explanation: data['explanation'] as String? ?? '',
-          latitude: location?['latitude'] ?? 0.0,
-          longitude: location?['longitude'] ?? 0.0,
-          hdop: (data['hdop'] as num?)?.toDouble() ?? 0.0,
-          velocity: (data['velocity'] as num?)?.toDouble() ?? 0.0,
-          timestamp: (data['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
-          syncStatus: 'synced',
-        );
-      })
-      .whereType<GeofenceEvent>()
-      .toList();
-      
-      allEvents.addAll(firestoreEvents);
-      debugPrint('Cargados ${firestoreEvents.length} eventos de Firestore (descifrados)');
-    } catch (e) {
-      debugPrint('Error al cargar eventos de Firestore: $e');
-
-      try {
-        final snapshot = await FirebaseFirestore.instance
-            .collection('events')
-            .limit(100)
-            .get();
-        
-        final firestoreEvents = snapshot.docs.map((doc) {
-          final rawData = doc.data();
-          if (rawData == null) return null;
-          
-          final data = rawData as Map<String, dynamic>;
-          final objectiveId = data['objective_id'] as String? ?? '';
-          
-          final encryptedLocation = data['encrypted_location'] as String?;
-          Map<String, double>? location;
-          
-          if (encryptedLocation != null && encryptedLocation.isNotEmpty) {
-            location = E2EEncryptionService().decryptLocation(
-              objectiveId: objectiveId,
-              encryptedData: encryptedLocation,
-            );
-          }
-          
-          return GeofenceEvent(
+      final objective = widget.objectiveId ?? FirebaseAuth.instance.currentUser?.uid;
+      if (objective != null) {
+        final snapshot = await FirebaseFirestore.instance.collection('events')
+            .where('objective_id', isEqualTo: objective)
+            .orderBy('timestamp', descending: true).limit(100).get();
+        for (final doc in snapshot.docs) {
+          final data = doc.data();
+          final encrypted = data['encrypted_location'];
+          final location = encrypted is String
+              ? await E2EEncryptionService().decryptLocation(
+                  objectiveId: objective, recordId: doc.id, encryptedData: encrypted,
+                )
+              : null;
+          allEvents.add(GeofenceEvent(
             id: doc.id,
-            objectiveId: objectiveId,
+            objectiveId: objective,
             geofenceId: data['geofence_id'] as String? ?? '',
             geofenceName: data['geofence_name'] as String? ?? 'Sin nombre',
             severity: EventSeverity.values.firstWhere(
@@ -148,25 +80,21 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
             velocity: (data['velocity'] as num?)?.toDouble() ?? 0.0,
             timestamp: (data['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
             syncStatus: 'synced',
-          );
-        })
-        .whereType<GeofenceEvent>()
-        .toList();
-        
-        final filtered = widget.objectiveId != null
-            ? firestoreEvents.where((e) => e.objectiveId == widget.objectiveId).toList()
-            : firestoreEvents;
-        allEvents.addAll(filtered);
-        debugPrint('Cargados ${filtered.length} eventos de Firestore (fallback)');
-      } catch (e2) {
-        debugPrint('Error secundario Firestore: $e2');
+          ));
+        }
       }
+    } catch (_) {
+      debugPrint('Historial remoto no disponible; se conservan los eventos locales');
     }
 
     // Eliminar duplicados y ordena
     final uniqueEvents = <String, GeofenceEvent>{};
     for (final event in allEvents) {
-      uniqueEvents[event.id] = event;
+      final previous = uniqueEvents[event.id];
+      if (previous == null ||
+          event.latitude != 0.0 || event.longitude != 0.0) {
+        uniqueEvents[event.id] = event;
+      }
     }
     
     final sortedEvents = uniqueEvents.values.toList()
