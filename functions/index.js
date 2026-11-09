@@ -46,8 +46,22 @@ exports.getPendingObserver = onCall(async ({auth, data}) => {
 async function notify(uid, type, objectiveId, recordId) {
   const user = (await db.doc(`users/${uid}`).get()).data();
   if (user?.is_deleted === true || typeof user?.fcm_token !== 'string' || !user.fcm_token) return;
+  const payload = makePush({token: user.fcm_token, type, objectiveId, recordId});
+  // El emulador no ofrece FCM. En el proyecto ficticio se verifica el aviso
+  // preparado por el trigger sin enviar nada fuera de los emuladores.
+  if (process.env.FUNCTIONS_EMULATOR === 'true' &&
+      process.env.GCLOUD_PROJECT === 'demo-geocercas' &&
+      process.env.FIRESTORE_EMULATOR_HOST && process.env.FIREBASE_AUTH_EMULATOR_HOST) {
+    await db.doc(`_integration_push/${uid}:${type}:${recordId}`).set({
+      recipient: uid,
+      data: payload.data,
+      title: payload.notification.title,
+      body: payload.notification.body,
+    });
+    return;
+  }
   try {
-    await getMessaging().send(makePush({token: user.fcm_token, type, objectiveId, recordId}));
+    await getMessaging().send(payload);
   } catch (error) {
     if (!['messaging/registration-token-not-registered',
       'messaging/invalid-registration-token'].includes(error.code)) throw error;

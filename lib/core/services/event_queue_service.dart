@@ -19,6 +19,17 @@ class EventQueueService {
   factory EventQueueService() => _instance;
   EventQueueService._();
 
+  @visibleForTesting
+  factory EventQueueService.forIntegrationTest() => EventQueueService._();
+
+  @visibleForTesting
+  Future<void> closeForIntegrationTest() async {
+    await _connectivity?.cancel();
+    await _sync;
+    _retry?.cancel();
+    await _box.close();
+  }
+
   final _db = FirebaseFirestore.instance;
   final _auth = FirebaseAuth.instance;
   final _storage = const FlutterSecureStorage(
@@ -29,6 +40,7 @@ class EventQueueService {
   Future<void>? _initialization;
   Future<void>? _sync;
   Timer? _retry;
+  StreamSubscription<ConnectivityResult>? _connectivity;
   int _retrySeconds = 15;
 
   Future<void> init() => _initialization ??= _initialize();
@@ -58,7 +70,7 @@ class EventQueueService {
         debugPrint('Evento anterior conservado: requiere revisión de formato');
       }
     }
-    Connectivity().onConnectivityChanged.listen((status) {
+    _connectivity = Connectivity().onConnectivityChanged.listen((status) {
       if (status != ConnectivityResult.none) {
         _retry?.cancel();
         _retrySeconds = 15;
