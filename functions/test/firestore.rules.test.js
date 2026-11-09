@@ -22,8 +22,8 @@ before(async () => {
 after(async () => env?.cleanup());
 beforeEach(async () => {
   await env.clearFirestore();
-  await env.withSecurityRulesDisabled(async ({firestore}) => {
-    const admin = firestore();
+  await env.withSecurityRulesDisabled(async (context) => {
+    const admin = context.firestore();
     await Promise.all(['objective', 'observer', 'other'].map((uid) =>
       setDoc(doc(admin, 'users', uid), profile(uid))));
   });
