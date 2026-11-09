@@ -45,11 +45,18 @@ jobs:
             cp "$RUNNER_TEMP/wrapper_seed/android/gradle/wrapper/gradle-wrapper.jar" android/gradle/wrapper/
             chmod +x android/gradlew
           fi
-          sdkmanager "platforms;android-36" "ndk;28.2.13676358" "system-images;android-35;google_apis;x86_64"
+          sdk_bin="$ANDROID_HOME/cmdline-tools/latest/bin"
+          if [ ! -x "$sdk_bin/sdkmanager" ]; then
+            sdk_bin="$(dirname "$(find "$ANDROID_HOME/cmdline-tools" -path '*/bin/sdkmanager' -print | sort -V | tail -1)")"
+          fi
+          test -x "$sdk_bin/sdkmanager"
+          "$sdk_bin/sdkmanager" "platforms;android-36" "ndk;28.2.13676358" "system-images;android-35;google_apis;x86_64"
+          echo "$ANDROID_HOME/emulator" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-geocercas-kvm.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-          printf 'no\n' | avdmanager create avd -n geocercas-ci -k "system-images;android-35;google_apis;x86_64" --force
+          printf 'no\n' | "$sdk_bin/avdmanager" create avd -n geocercas-ci -k "system-images;android-35;google_apis;x86_64" --force
       - name: Ejecutar dos roles en Android y Firebase de prueba
         run: |
           emulator -avd geocercas-ci -port 5554 -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect > "$RUNNER_TEMP/emulator-android.log" 2>&1 &

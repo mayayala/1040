@@ -24,6 +24,8 @@ Exactitud: 89,67 %. Sensibilidad crítica: 76,28 % (119/156). Precisión crític
 
 Las mismas características, normalización y umbrales recorren las mismas ramas. Las estimaciones de clase de la hoja son salidas del árbol, no un paso aleatorio ni una red neuronal. Las reglas del motor pueden alterar la severidad final de la alerta; la matriz anterior sólo evalúa la clasificación del árbol con sus umbrales.
 
+El [análisis de umbrales](../training/results/critical_threshold_validation.json) usa sólo las 1.800 ventanas de validación, con 126 casos críticos. Mantener el umbral 0,40 dio 92 aciertos críticos y 38 falsos positivos críticos (sensibilidad 73,02 %; precisión 70,77 %). Reducirlo a 0,391 dio 102 aciertos y 98 falsos positivos (sensibilidad 80,95 %; precisión 51,00 %; F1 crítico 62,58 % frente a 71,88 %). Se mantuvo el umbral original: superar el criterio de sensibilidad de esta forma produciría 60 falsas alertas críticas adicionales para recuperar 10 casos en validación. Estas cifras no reemplazan las de prueba.
+
 ### Geocercas circulares
 
 La referencia de entrada o salida se determina con la posición simulada sin ruido y el radio nominal, antes de observar el error GNSS. Ambos métodos reciben las mismas observaciones. La tasa corresponde a muestras, no a notificaciones entregadas. El protocolo anterior usaba el radio adaptativo al definir la referencia; sus cifras no son comparables directamente.
@@ -45,6 +47,8 @@ El prototipo confía en la autenticidad del directorio de claves de Firebase. No
 Los vínculos nuevos tienen identificador `objetivo:observador`. Probar primero con cuentas nuevas y datos ficticios; los vínculos históricos con IDs aleatorios no autorizan lecturas ni cifrado con la regla nueva. No desplegar sobre un proyecto existente sin revisar esos vínculos, la configuración de facturación, las claves y la conservación de datos.
 
 ## Pruebas manuales de aceptación
+
+El [protocolo con teléfonos físicos](prueba-fisica.md) incluye el registro por ID, la separación de latencias y la captura de batería con unidades explícitas.
 
 1. Registrar dos cuentas de prueba en Android. Enviar una solicitud; verificar que el observador no pueda acceder al historial antes de que el objetivo la acepte. Aceptar y comprobar ubicación cifrada y aviso sin coordenadas.
 2. Generar un evento y un SOS sin red. Revisar que se conservan tras reiniciar la app. Restablecer la conexión: verificar un único documento por ID y entrega de la notificación. Registrar hora de generación, hora de sincronización y hora de recepción por separado.
