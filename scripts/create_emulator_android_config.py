@@ -12,7 +12,7 @@ path.write_text(json.dumps({
             "mobilesdk_app_id": "1:1234567890:android:0000000000000000",
             "android_client_info": {"package_name": "com.umsa.geocercas"},
         },
-        "api_key": [{"current_key": "emulator-only-not-a-real-key"}],
+        "api_key": [{"current_key": "AIza" + "0" * 35}],
     }],
     "configuration_version": "1",
 }, indent=2) + "\n")
