@@ -5,7 +5,7 @@ Este protocolo complementa la integración emulada. Use cuentas y ubicaciones de
 ## Recepción de avisos y reconexión
 
 1. Abra las dos cuentas y compruebe que la clave pública de cada una se registró. Envíe una solicitud de vínculo, acepte y compruebe que el observador ve una ubicación y que una cuenta sin vínculo no la puede consultar.
-2. Realice al menos 20 envíos de SOS en el mismo estado de la app receptora y con la red documentada. En cada intento registre el ID del evento, hora de pulsación confirmada en el objetivo, hora de sincronización en Firestore y hora en que el aviso es visible en el observador. Sincronice ambos relojes y, si mide con video, indique su frecuencia. Repita en segundo plano como condición separada.
+2. Realice al menos 20 envíos de SOS en el mismo estado de la app receptora y con la red documentada. En cada intento registre el ID del evento, hora de pulsación confirmada en el objetivo, hora de sincronización en Firestore y hora en que el aviso es visible en el observador. Sincronice ambos relojes y, si mide con video, indique su frecuencia. Resuelva el SOS entre intentos y respete el periodo de espera de la aplicación. Repita en segundo plano como condición separada.
 3. En otra serie, desconecte el objetivo, genere el SOS y reinicie la app. Compruebe que el evento sigue pendiente. Reconecte y confirme que hay un único evento por ID, que el observador recibe el aviso y que puede abrir el mapa. Revocada la relación, repita la prueba de acceso.
 4. Registre los intentos sin recepción como tales. Informe conteos y porcentajes por condición y las latencias de los intentos recibidos con su denominador. No mezcle tiempo sin conexión, latencia de sincronización y entrega FCM en una sola cifra.
 

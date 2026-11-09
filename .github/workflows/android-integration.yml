@@ -56,14 +56,25 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-geocercas-kvm.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-          printf 'no\n' | "$sdk_bin/avdmanager" create avd -n geocercas-ci -k "system-images;android-35;google_apis;x86_64" --force
+          export ANDROID_AVD_HOME="$RUNNER_TEMP/geocercas-avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo "ANDROID_AVD_HOME=$ANDROID_AVD_HOME" >> "$GITHUB_ENV"
+          printf 'no\n' | "$sdk_bin/avdmanager" create avd -n geocercas-ci -k "system-images;android-35;google_apis;x86_64" -p "$ANDROID_AVD_HOME/geocercas-ci.avd" --force
+          "$ANDROID_HOME/emulator/emulator" -list-avds | tee "$RUNNER_TEMP/geocercas-avds.log"
+          grep -Fx geocercas-ci "$RUNNER_TEMP/geocercas-avds.log"
       - name: Ejecutar dos roles en Android y Firebase de prueba
         run: |
           emulator -avd geocercas-ci -port 5554 -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect > "$RUNNER_TEMP/emulator-android.log" 2>&1 &
           emulator_pid=$!
           trap 'kill "$emulator_pid" 2>/dev/null || true' EXIT
-          timeout 200 adb wait-for-device
-          timeout 180 bash -c 'until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
+          deadline=$((SECONDS + 240))
+          until [ "$(adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; do
+            if ! kill -0 "$emulator_pid" 2>/dev/null || [ "$SECONDS" -ge "$deadline" ]; then
+              cat "$RUNNER_TEMP/emulator-android.log"
+              exit 1
+            fi
+            sleep 2
+          done
           adb shell input keyevent 82
           npx --yes firebase-tools@14 emulators:exec --only auth,firestore,functions --project demo-geocercas "bash scripts/run_android_integration.sh"
       - uses: actions/upload-artifact@v4
@@ -74,5 +85,6 @@ jobs:
             ${{ runner.temp }}/geocercas-android-integration.json
             ${{ runner.temp }}/geocercas-integration.log
             ${{ runner.temp }}/emulator-android.log
+            ${{ runner.temp }}/geocercas-avds.log
             firestore-debug.log
           if-no-files-found: ignore

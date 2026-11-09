@@ -10,6 +10,8 @@ Versión de origen: [a10b35f4](https://github.com/mayayala/1040/commit/a10b35f44
 
 ## Resultados ejecutados
 
+La [figura archivada en el repositorio original](https://github.com/mayayala/1040/blob/a10b35f44b5269b473116ecd72752d5e3862cc61/training/plots/02_confusion_matrix_test.png) contiene 1.800 muestras, incluidas 204 críticas. No coincide con las matrices históricas del documento, de 1.213 y 1.208 muestras, ni con la nueva evaluación del árbol congelado, que también tiene 1.800 muestras pero sólo 156 críticas. No se establece equivalencia entre esas matrices.
+
 ### Clasificador incorporado en la app
 
 El CSV del repositorio tiene 12.000 ventanas de 200 usuarios sintéticos. Se reprodujo la división por usuario con semilla 42: 140 usuarios para entrenamiento, 30 para validación y 30 para prueba. Esta ejecución **no reentrena** ni ajusta el umbral mirando la prueba. Evalúa el árbol y el preprocesamiento que se distribuyen con Android; no certifica el origen de las matrices de la defensa ni mide la latencia en Android.

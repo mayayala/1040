@@ -34,6 +34,7 @@ jobs:
       - run: npm --prefix functions install
       - run: npm --prefix functions test
       - run: npx --yes firebase-tools@14 emulators:exec --only firestore --project demo-geocercas "npm --prefix functions run test:rules"
+      - run: npx --yes firebase-tools@14 emulators:exec --only auth,firestore,functions --project demo-geocercas "node --test functions/test/emulator-flow.test.js"
 
   resultados:
     runs-on: ubuntu-latest
